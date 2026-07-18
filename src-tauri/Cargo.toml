@@ -37,3 +37,7 @@ zip = "2"
 anyhow = "1"
 # Читаемые метки времени в launcher.log для саппорта
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Офлайн-UUID (MD5 "OfflinePlayer:<ник>" -> UUID v3) и парсинг pack.toml
+md5 = "0.7"
+uuid = "1"
+toml = "0.8"
