@@ -1,0 +1,10 @@
+# Rust / Cargo
+/src-tauri/target/
+
+# Служебные файлы окружения, не относящиеся к проекту
+/.claude/
+claude.exe
+
+# IDE
+.vscode/
+.idea/

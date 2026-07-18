@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "launcher": { "version": "0.1.0", "url": "", "sha256": "" },
+  "minecraft": { "version": "26.2" },
+  "neoforge": { "version": "26.2.0.8-beta" },
+  "java": {
+    "major": 25,
+    "windows-x64": {
+      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.3%2B9/OpenJDK25U-jre_x64_windows_hotspot_25.0.3_9.zip",
+      "sha256": "a183e7280220ad5f6fe94ecbf025a5f10fc5797a0b18c600ed8f813c8158c530"
+    }
+  },
+  "server": { "host": "play.example.com", "port": 25565 },
+  "links": {
+    "donate": "https://example.com/donate",
+    "discord": "https://discord.gg/example",
+    "telegram": "https://t.me/example"
+  },
+  "news": "Тестовый манифест для разработки лаунчера (Этап 1)",
+  "packs": []
+}
