@@ -4,6 +4,7 @@
 use crate::auth::offline_auth;
 use crate::libraries::build_classpath;
 use crate::paths::AppPaths;
+use crate::progress::ProgressReporter;
 use crate::version::{expand_args, MergedVersion};
 use anyhow::{Context, Result};
 use std::collections::HashMap;
@@ -17,7 +18,9 @@ pub fn launch_game(
     java_exe: &Path,
     version: &MergedVersion,
     nick: &str,
+    reporter: &ProgressReporter,
 ) -> Result<std::process::Child> {
+    reporter.report("launch", "Запуск игры", 0, 1);
     let auth = offline_auth(nick);
     let classpath = build_classpath(paths, version);
     let classpath_str = classpath
@@ -73,9 +76,11 @@ pub fn launch_game(
         .args(&game_args)
         .current_dir(&paths.game_dir);
 
-    command
+    let child = command
         .spawn()
-        .context("Не удалось запустить процесс игры (java повреждена или classpath некорректен)")
+        .context("Не удалось запустить процесс игры (java повреждена или classpath некорректен)")?;
+    reporter.report("launch", "Игра запущена", 1, 1);
+    Ok(child)
 }
 
 fn substitute(template: &str, values: &HashMap<&str, String>) -> String {

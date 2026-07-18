@@ -8,6 +8,7 @@
 // перед установкой мы сами кладём туда минимальный стаб.
 use crate::downloader::{download_and_verify, HashAlgo};
 use crate::paths::AppPaths;
+use crate::progress::ProgressReporter;
 use anyhow::{bail, Context, Result};
 
 const MAVEN_BASE: &str = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
@@ -17,6 +18,7 @@ pub async fn ensure_neoforge_installed(
     paths: &AppPaths,
     java_exe: &std::path::Path,
     neoforge_version: &str,
+    reporter: &ProgressReporter,
 ) -> Result<()> {
     let version_json = paths
         .game_dir
@@ -27,6 +29,8 @@ pub async fn ensure_neoforge_installed(
     if version_json.is_file() {
         return Ok(());
     }
+
+    reporter.report("install", "Установка NeoForge", 0, 1);
 
     std::fs::create_dir_all(&paths.game_dir)
         .with_context(|| format!("Не удалось создать папку {}", paths.game_dir.display()))?;
@@ -71,6 +75,7 @@ pub async fn ensure_neoforge_installed(
         );
     }
 
+    reporter.report("install", "NeoForge установлен", 1, 1);
     Ok(())
 }
 

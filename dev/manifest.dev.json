@@ -16,6 +16,19 @@
     "discord": "https://discord.gg/example",
     "telegram": "https://t.me/example"
   },
-  "news": "Тестовый манифест для разработки лаунчера (Этап 1)",
-  "packs": []
+  "news": "Тестовый манифест для разработки лаунчера",
+  "packs": [
+    {
+      "id": "test",
+      "title": "Test Pack",
+      "subtitle": "Локальный тестовый пак для разработки",
+      "packwiz_url": "http://127.0.0.1:8973/pack.toml"
+    },
+    {
+      "id": "lite",
+      "title": "Lite",
+      "subtitle": "Заглушка второй карточки (нет реального пака)",
+      "packwiz_url": "http://127.0.0.1:8973/pack.toml"
+    }
+  ]
 }

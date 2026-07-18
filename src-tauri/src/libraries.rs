@@ -5,6 +5,7 @@
 // сами, ровно как это делает официальный лаунчер.
 use crate::downloader::{download_and_verify, HashAlgo};
 use crate::paths::AppPaths;
+use crate::progress::ProgressReporter;
 use crate::version::{rules_allow, MergedVersion, RawLibrary};
 use anyhow::Result;
 use std::path::PathBuf;
@@ -18,18 +19,27 @@ fn applicable_libraries(version: &MergedVersion) -> Vec<&RawLibrary> {
         .collect()
 }
 
-pub async fn ensure_libraries(paths: &AppPaths, version: &MergedVersion) -> Result<()> {
+pub async fn ensure_libraries(paths: &AppPaths, version: &MergedVersion, reporter: &ProgressReporter) -> Result<()> {
     let client = reqwest::Client::new();
+    let libs = applicable_libraries(version);
+    let missing: Vec<_> = libs
+        .into_iter()
+        .filter(|lib| {
+            let artifact = lib.downloads.as_ref().unwrap().artifact.as_ref().unwrap();
+            !paths.game_dir.join("libraries").join(&artifact.path).is_file()
+        })
+        .collect();
 
-    for lib in applicable_libraries(version) {
+    let total = missing.len() as u64;
+    reporter.report("install", "Проверка библиотек", 0, total.max(1));
+
+    for (i, lib) in missing.iter().enumerate() {
         let artifact = lib.downloads.as_ref().unwrap().artifact.as_ref().unwrap();
         let dest = paths.game_dir.join("libraries").join(&artifact.path);
-        if dest.is_file() {
-            continue;
-        }
         download_and_verify(&client, &artifact.url, HashAlgo::Sha1, &artifact.sha1, &dest)
             .await
             .map_err(|e| e.context(format!("Не удалось скачать библиотеку {}", lib.name)))?;
+        reporter.report("install", "Загрузка библиотек", (i + 1) as u64, total);
     }
 
     Ok(())

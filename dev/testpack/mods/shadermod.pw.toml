@@ -1,0 +1,13 @@
+name = "Test Shader Mod"
+filename = "shadermod.jar"
+side = "client"
+
+[download]
+url = "http://127.0.0.1:8973/mods/shadermod.jar"
+hash-format = "sha256"
+hash = "acf26f94bfc1e826259fe07f40649fb13f26eba80af03821f0f747259f3ef7a2"
+
+[option]
+optional = true
+description = "Опциональный тестовый мод для проверки Этапа 5"
+default = false

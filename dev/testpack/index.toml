@@ -3,3 +3,8 @@ hash-format = "sha256"
 [[files]]
 file = "mods/testmod.txt"
 hash = "2aa3a04e9cb2f6f32d472c9b79b5017d0c5c93b2e775c8e862927d8b50671d8c"
+
+[[files]]
+file = "mods/shadermod.pw.toml"
+hash = "38a4d0b585172f1df74cf64ff03a8b2760db127c23fc13c07f14fd6b3a89e32e"
+metafile = true

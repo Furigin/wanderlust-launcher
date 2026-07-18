@@ -3,11 +3,14 @@
 // piston-meta: {"objects": {"<path>": {"hash": "<sha1>", "size": N}}}.
 use crate::downloader::{download_and_verify, HashAlgo};
 use crate::paths::AppPaths;
+use crate::progress::ProgressReporter;
 use crate::version::MergedVersion;
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 struct AssetIndexFile {
@@ -20,8 +23,9 @@ struct AssetObject {
     size: u64,
 }
 
-pub async fn ensure_assets(paths: &AppPaths, version: &MergedVersion) -> Result<()> {
+pub async fn ensure_assets(paths: &AppPaths, version: &MergedVersion, reporter: &ProgressReporter) -> Result<()> {
     let client = reqwest::Client::new();
+    reporter.report("assets", "Проверка ассетов", 0, 1);
 
     let indexes_dir = paths.game_dir.join("assets").join("indexes");
     let index_path = indexes_dir.join(format!("{}.json", version.asset_index.id));
@@ -62,17 +66,26 @@ pub async fn ensure_assets(paths: &AppPaths, version: &MergedVersion) -> Result<
         }
     }
 
+    let total = pending.len() as u64;
+    let done = Arc::new(AtomicU64::new(0));
+    reporter.report("assets", "Загрузка ассетов", 0, total.max(1));
+
     futures_util::stream::iter(pending.into_iter().map(|(hash, _size, dest)| {
         let client = client.clone();
+        let done = done.clone();
+        let reporter = reporter.clone();
         async move {
             let url = format!(
                 "https://resources.download.minecraft.net/{}/{}",
                 &hash[0..2],
                 hash
             );
-            download_and_verify(&client, &url, HashAlgo::Sha1, &hash, &dest)
+            let result = download_and_verify(&client, &url, HashAlgo::Sha1, &hash, &dest)
                 .await
-                .with_context(|| format!("Не удалось скачать asset-объект {hash}"))
+                .with_context(|| format!("Не удалось скачать asset-объект {hash}"));
+            let completed = done.fetch_add(1, Ordering::Relaxed) + 1;
+            reporter.report("assets", "Загрузка ассетов", completed, total);
+            result
         }
     }))
     .buffer_unordered(CONCURRENCY)
@@ -81,5 +94,6 @@ pub async fn ensure_assets(paths: &AppPaths, version: &MergedVersion) -> Result<
     .into_iter()
     .collect::<Result<Vec<()>>>()?;
 
+    reporter.report("assets", "Ассеты готовы", total, total.max(1));
     Ok(())
 }

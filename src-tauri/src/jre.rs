@@ -5,16 +5,19 @@
 use crate::downloader::{download_and_verify, HashAlgo};
 use crate::manifest::JavaBinary;
 use crate::paths::AppPaths;
+use crate::progress::ProgressReporter;
 use anyhow::{bail, Context, Result};
 use std::io::Read;
 use std::path::Path;
 
 /// Возвращает путь к java.exe, скачивая и распаковывая JRE при необходимости.
-pub async fn ensure_jre(paths: &AppPaths, java: &JavaBinary) -> Result<std::path::PathBuf> {
+pub async fn ensure_jre(paths: &AppPaths, java: &JavaBinary, reporter: &ProgressReporter) -> Result<std::path::PathBuf> {
     let java_exe = paths.java_exe();
     if java_exe.is_file() {
         return Ok(java_exe);
     }
+
+    reporter.report("java", "Скачивание Java Runtime", 0, 1);
 
     std::fs::create_dir_all(&paths.runtime_dir)
         .with_context(|| format!("Не удалось создать папку {}", paths.runtime_dir.display()))?;
@@ -26,10 +29,13 @@ pub async fn ensure_jre(paths: &AppPaths, java: &JavaBinary) -> Result<std::path
         .await
         .context("Не удалось скачать Java Runtime")?;
 
+    reporter.report("java", "Распаковка Java Runtime", 0, 1);
+
     extract_jre_zip(&zip_path, &paths.jre_dir)
         .context("Не удалось распаковать архив Java Runtime")?;
 
     let _ = std::fs::remove_file(&zip_path);
+    reporter.report("java", "Java Runtime готова", 1, 1);
 
     if !java_exe.is_file() {
         bail!(
