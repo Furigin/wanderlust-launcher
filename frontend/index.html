@@ -2,12 +2,15 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>Project Launcher</title>
+  <title>Wanderlust Launcher</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="titlebar" data-tauri-drag-region>
-    <span class="titlebar-title" data-tauri-drag-region>Project Launcher</span>
+    <div class="titlebar-left">
+      <button id="btn-home" class="titlebar-btn titlebar-btn-back hidden" title="К выбору версии">&#8592;</button>
+      <span class="titlebar-title" id="titlebar-title" data-tauri-drag-region>Wanderlust</span>
+    </div>
     <div class="titlebar-buttons">
       <button id="btn-minimize" class="titlebar-btn" title="Свернуть">&#8722;</button>
       <button id="btn-close" class="titlebar-btn titlebar-btn-close" title="Закрыть">&#10005;</button>
@@ -16,14 +19,17 @@
 
   <div class="app-bg"></div>
 
-  <main class="app-content">
-    <button id="btn-settings" class="icon-btn settings-btn" title="Опциональные моды">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"></circle>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-      </svg>
-    </button>
+  <!-- Экран выбора версии/сборки -->
+  <section id="screen-home" class="home-screen">
+    <div class="home-inner">
+      <div class="home-brand">WANDERLUST</div>
+      <div class="home-hint">Выберите сборку</div>
+      <div class="version-grid" id="version-grid"></div>
+    </div>
+  </section>
 
+  <!-- Экран запуска выбранной версии -->
+  <main class="app-content hidden" id="screen-play">
     <div class="news" id="news-text"></div>
 
     <div class="center-column">
@@ -36,10 +42,17 @@
         spellcheck="false"
       />
 
-      <div class="pack-cards" id="pack-cards"></div>
-
       <div class="action-area">
-        <button id="btn-play" class="play-btn" disabled>ИГРАТЬ</button>
+        <div id="action-row" class="action-row">
+          <button id="btn-play" class="play-btn" disabled>ИГРАТЬ</button>
+          <button id="btn-settings" class="icon-btn mods-btn" title="Дополнительные моды">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>Моды</span>
+          </button>
+        </div>
 
         <div id="progress-area" class="progress-area hidden">
           <div class="progress-bar">

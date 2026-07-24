@@ -10,13 +10,21 @@ use std::collections::HashMap;
 pub struct Settings {
     #[serde(default)]
     pub nickname: String,
-    #[serde(default)]
-    pub selected_pack: String,
     #[serde(default = "default_ram_mb")]
     pub ram_mb: u32,
-    /// pack_id -> (option_id -> включен ли)
+    /// version_id -> (option_id(путь .pw.toml в паке) -> включён ли). Раздельно
+    /// по версиям: у каждой сборки свой пак, и одинаковый путь .pw.toml в разных
+    /// паках — это разные моды, их выбор не должен пересекаться.
     #[serde(default)]
     pub optional_mods: HashMap<String, HashMap<String, bool>>,
+}
+
+impl Settings {
+    /// Выбор опциональных модов для конкретной версии (пустой, если игрок
+    /// ещё ничего не трогал). Клон, чтобы отдавать в packwiz::reconcile.
+    pub fn optional_for(&self, version_id: &str) -> HashMap<String, bool> {
+        self.optional_mods.get(version_id).cloned().unwrap_or_default()
+    }
 }
 
 fn default_ram_mb() -> u32 {
@@ -27,7 +35,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             nickname: String::new(),
-            selected_pack: String::new(),
             ram_mb: default_ram_mb(),
             optional_mods: HashMap::new(),
         }

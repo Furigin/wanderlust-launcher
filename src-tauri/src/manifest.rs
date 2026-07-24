@@ -1,5 +1,8 @@
-// Структура манифеста ровно как в ТЗ проекта: единственный URL зашит в
-// лаунчер, всё остальное (версии, ссылки, паки) сервер отдаёт отсюда.
+// Схема манифеста v2: единственный URL зашит в лаунчер, всё остальное сервер
+// отдаёт отсюда. Ключевое отличие от v1 — вместо одного пака список версий
+// (`versions`), у каждой свой Minecraft/NeoForge/Java/сервер/packwiz-пак, тема
+// оформления и статус. Так лаунчер показывает экран выбора (см. фронт), а
+// разные версии Minecraft не делят одну game-папку (см. paths.rs).
 // Serialize нужен, чтобы отдавать манифест на фронт через Tauri-команду.
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -8,15 +11,16 @@ use serde::{Deserialize, Serialize};
 pub struct Manifest {
     pub schema: u32,
     pub launcher: LauncherInfo,
-    pub minecraft: MinecraftInfo,
-    pub neoforge: NeoforgeInfo,
-    pub java: JavaInfo,
-    pub server: ServerInfo,
+    #[serde(default)]
     pub links: LinksInfo,
-    #[serde(default)]
-    pub news: String,
-    #[serde(default)]
-    pub packs: Vec<PackInfo>,
+    pub versions: Vec<VersionInfo>,
+}
+
+impl Manifest {
+    /// Ищет версию по её `id` (ключ из манифеста, он же имя game-папки).
+    pub fn version(&self, id: &str) -> Option<&VersionInfo> {
+        self.versions.iter().find(|v| v.id == id)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -28,36 +32,83 @@ pub struct LauncherInfo {
     pub sha256: String,
 }
 
+/// Одна версия/сборка в списке выбора. Поля, нужные только для запуска
+/// (minecraft/neoforge/java/server/pack), помечены `#[serde(default)]` —
+/// у карточки со `status = "soon"` их можно вообще не заполнять, запуск такой
+/// версии всё равно заблокирован (см. lib.rs::run_launch_pipeline).
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct VersionInfo {
+    /// Стабильный идентификатор: имя game-папки и ключ выбора. Не меняй его
+    /// после релиза — иначе у игроков сборка переустановится с нуля.
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: String,
+    /// Тема карточки на фронте: "orange" | "purple" | "default".
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// "ready" — играбельна, "soon" — карточка «Скоро», клик заблокирован.
+    #[serde(default = "default_status")]
+    pub status: String,
+    #[serde(default)]
+    pub news: String,
+    #[serde(default)]
+    pub minecraft: MinecraftInfo,
+    #[serde(default)]
+    pub neoforge: NeoforgeInfo,
+    #[serde(default)]
+    pub java: JavaInfo,
+    #[serde(default)]
+    pub server: ServerInfo,
+    #[serde(default)]
+    pub pack: PackInfo,
+}
+
+fn default_theme() -> String {
+    "default".to_string()
+}
+
+fn default_status() -> String {
+    "ready".to_string()
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct MinecraftInfo {
+    #[serde(default)]
     pub version: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct NeoforgeInfo {
+    #[serde(default)]
     pub version: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct JavaInfo {
+    #[serde(default)]
     pub major: u32,
-    #[serde(rename = "windows-x64")]
+    #[serde(rename = "windows-x64", default)]
     pub windows_x64: JavaBinary,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct JavaBinary {
+    #[serde(default)]
     pub url: String,
+    #[serde(default)]
     pub sha256: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ServerInfo {
+    #[serde(default)]
     pub host: String,
+    #[serde(default)]
     pub port: u16,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct LinksInfo {
     #[serde(default)]
     pub donate: String,
@@ -67,12 +118,11 @@ pub struct LinksInfo {
     pub telegram: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct PackInfo {
-    pub id: String,
+    #[serde(default)]
     pub title: String,
     #[serde(default)]
-    pub subtitle: String,
     pub packwiz_url: String,
 }
 

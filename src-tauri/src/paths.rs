@@ -1,5 +1,10 @@
 // Все файлы лаунчера живут в одной папке %APPDATA%/<PROJECT_DIR_NAME>/,
 // чтобы при отладке всё можно было снести одним удалением каталога.
+//
+// С мультиверсиями каждая версия получает свою game-папку
+// (instances/<version_id>) и свою JRE (runtime/jre-<major>): разные версии
+// Minecraft требуют разной Java и не должны делить mods/. Общие для всех
+// версий вещи (tools/, настройки, лог) остаются в корне.
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
@@ -18,18 +23,41 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
-    pub fn new() -> Result<Self> {
+    fn root_and_runtime() -> Result<(PathBuf, PathBuf)> {
         let appdata = std::env::var_os("APPDATA")
             .context("Переменная окружения APPDATA не найдена — это не Windows?")?;
         let root = PathBuf::from(appdata).join(PROJECT_DIR_NAME);
         let runtime_dir = root.join("runtime");
+        Ok((root, runtime_dir))
+    }
+
+    /// Пути без привязки к версии — для команд, которым нужен только корень
+    /// (настройки, tools). `game_dir`/`jre_dir` здесь указывают на общие
+    /// каталоги-родители и напрямую такими командами не используются.
+    pub fn global() -> Result<Self> {
+        let (root, runtime_dir) = Self::root_and_runtime()?;
         Ok(Self {
-            jre_dir: runtime_dir.join("jre-25"),
-            runtime_dir,
-            game_dir: root.join("game"),
+            jre_dir: runtime_dir.join("jre"),
+            game_dir: root.join("instances"),
             tools_dir: root.join("tools"),
             launcher_json: root.join("launcher.json"),
             log_file: root.join("launcher.log"),
+            runtime_dir,
+            root,
+        })
+    }
+
+    /// Пути конкретной версии: своя game-папка (instances/<version_id>) и своя
+    /// JRE (runtime/jre-<major>). Настройки и tools — общие для всех версий.
+    pub fn for_version(version_id: &str, java_major: u32) -> Result<Self> {
+        let (root, runtime_dir) = Self::root_and_runtime()?;
+        Ok(Self {
+            jre_dir: runtime_dir.join(format!("jre-{java_major}")),
+            game_dir: root.join("instances").join(version_id),
+            tools_dir: root.join("tools"),
+            launcher_json: root.join("launcher.json"),
+            log_file: root.join("launcher.log"),
+            runtime_dir,
             root,
         })
     }

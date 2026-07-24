@@ -1,34 +1,55 @@
 {
-  "schema": 1,
+  "schema": 2,
   "launcher": { "version": "0.1.0", "url": "", "sha256": "" },
-  "minecraft": { "version": "26.2" },
-  "neoforge": { "version": "26.2.0.8-beta" },
-  "java": {
-    "major": 25,
-    "windows-x64": {
-      "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.3%2B9/OpenJDK25U-jre_x64_windows_hotspot_25.0.3_9.zip",
-      "sha256": "a183e7280220ad5f6fe94ecbf025a5f10fc5797a0b18c600ed8f813c8158c530"
-    }
-  },
-  "server": { "host": "play.example.com", "port": 25565 },
   "links": {
     "donate": "https://example.com/donate",
     "discord": "https://discord.gg/example",
     "telegram": "https://t.me/example"
   },
-  "news": "Тестовый манифест для разработки лаунчера",
-  "packs": [
+  "versions": [
     {
-      "id": "test",
-      "title": "Test Pack",
-      "subtitle": "Локальный тестовый пак для разработки",
-      "packwiz_url": "http://127.0.0.1:8973/pack.toml"
+      "id": "wanderlust-create",
+      "title": "Wanderlust Create",
+      "subtitle": "Minecraft 1.21.1",
+      "theme": "orange",
+      "status": "ready",
+      "news": "Wanderlust Create — сборка вокруг Create на 1.21.1. Жми «Играть», лаунчер сам скачает и обновит все моды.",
+      "minecraft": { "version": "26.2" },
+      "neoforge": { "version": "26.2.0.8-beta" },
+      "java": {
+        "major": 25,
+        "windows-x64": {
+          "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.3%2B9/OpenJDK25U-jre_x64_windows_hotspot_25.0.3_9.zip",
+          "sha256": "a183e7280220ad5f6fe94ecbf025a5f10fc5797a0b18c600ed8f813c8158c530"
+        }
+      },
+      "server": { "host": "play.example.com", "port": 25565 },
+      "pack": {
+        "title": "Wanderlust Create",
+        "packwiz_url": "http://127.0.0.1:8973/pack.toml"
+      }
     },
     {
-      "id": "lite",
-      "title": "Lite",
-      "subtitle": "Заглушка второй карточки (нет реального пака)",
-      "packwiz_url": "http://127.0.0.1:8973/pack.toml"
+      "id": "stray-souls",
+      "title": "Wanderlust Stray Souls",
+      "subtitle": "Minecraft 26.2 · самописы",
+      "theme": "purple",
+      "status": "soon",
+      "news": "Наша авторская сборка на 26.2. Скоро.",
+      "minecraft": { "version": "26.2" },
+      "neoforge": { "version": "26.2.0.8-beta" },
+      "java": {
+        "major": 25,
+        "windows-x64": {
+          "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.3%2B9/OpenJDK25U-jre_x64_windows_hotspot_25.0.3_9.zip",
+          "sha256": "a183e7280220ad5f6fe94ecbf025a5f10fc5797a0b18c600ed8f813c8158c530"
+        }
+      },
+      "server": { "host": "play.example.com", "port": 25566 },
+      "pack": {
+        "title": "Wanderlust Stray Souls",
+        "packwiz_url": "http://127.0.0.1:8973/pack.toml"
+      }
     }
   ]
 }

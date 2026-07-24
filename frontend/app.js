@@ -1,7 +1,11 @@
 // Чистый JS без сборщика — Tauri v2 при withGlobalTauri:true кладёт API
 // в window.__TAURI__. Экраны "Прогресс" и "Ошибка" — это не отдельные
-// страницы, а состояния action-area на главном экране (кнопка ИГРАТЬ
+// страницы, а состояния action-area на экране запуска (кнопка ИГРАТЬ
 // подменяется полосой прогресса на том же месте, см. ТЗ Этапа 4).
+//
+// Поверх этого — экран выбора версии (#screen-home): карточки сборок из
+// manifest.versions. Клик по играбельной ("ready") карточке выбирает версию
+// и открывает экран запуска уже в её контексте; "soon" — витрина «Скоро».
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -23,12 +27,18 @@ window.addEventListener("unhandledrejection", (e) => flog("error", `unhandledrej
 const state = {
   manifest: null,
   settings: null,
-  selectedPackId: null,
+  // Выбранная версия (объект из manifest.versions) или null на экране выбора.
+  selected: null,
 };
 
 const el = {
+  homeScreen: document.getElementById("screen-home"),
+  playScreen: document.getElementById("screen-play"),
+  versionGrid: document.getElementById("version-grid"),
+  btnHome: document.getElementById("btn-home"),
+  titlebarTitle: document.getElementById("titlebar-title"),
   nickInput: document.getElementById("nick-input"),
-  packCards: document.getElementById("pack-cards"),
+  actionRow: document.getElementById("action-row"),
   playBtn: document.getElementById("btn-play"),
   progressArea: document.getElementById("progress-area"),
   progressFill: document.getElementById("progress-fill"),
@@ -46,6 +56,7 @@ const el = {
 
 document.getElementById("btn-minimize").addEventListener("click", () => appWindow.minimize());
 document.getElementById("btn-close").addEventListener("click", () => appWindow.close());
+el.btnHome.addEventListener("click", goHome);
 
 // ---------- Ник ----------
 
@@ -60,8 +71,7 @@ function validateNick() {
 el.nickInput.addEventListener("input", validateNick);
 
 function updatePlayAvailability() {
-  const nickOk = NICK_RE.test(el.nickInput.value);
-  el.playBtn.disabled = !(nickOk && state.selectedPackId);
+  el.playBtn.disabled = !NICK_RE.test(el.nickInput.value);
 }
 
 // ---------- Иконки для ссылок (без внешних файлов) ----------
@@ -90,60 +100,109 @@ function renderFooterLinks(links) {
   }
 }
 
-// ---------- Карточки паков ----------
-
-function renderPackCards(packs) {
-  el.packCards.innerHTML = "";
-  for (const pack of packs) {
-    const card = document.createElement("button");
-    card.className = "pack-card";
-    card.type = "button";
-    card.innerHTML = `
-      <div class="pack-card-title">${escapeHtml(pack.title)}</div>
-      <div class="pack-card-subtitle">${escapeHtml(pack.subtitle || "")}</div>
-    `;
-    card.addEventListener("click", () => selectPack(pack.id));
-    card.dataset.packId = pack.id;
-    el.packCards.appendChild(card);
-  }
-}
-
-function selectPack(packId) {
-  state.selectedPackId = packId;
-  for (const card of el.packCards.children) {
-    card.classList.toggle("selected", card.dataset.packId === packId);
-  }
-  updatePlayAvailability();
-}
-
 function escapeHtml(s) {
   const div = document.createElement("div");
   div.textContent = s;
   return div.innerHTML;
 }
 
+// ---------- Экран выбора версии ----------
+
+const CARD_ARROW =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>';
+
+function renderVersionGrid(versions) {
+  el.versionGrid.innerHTML = "";
+  const themes = new Set(["orange", "purple", "default"]);
+
+  for (const v of versions) {
+    const ready = v.status === "ready";
+    const theme = themes.has(v.theme) ? v.theme : "default";
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `version-card theme-${theme}${ready ? "" : " is-soon"}`;
+    card.dataset.id = v.id;
+    if (!ready) card.disabled = true;
+
+    const badge = ready
+      ? '<span class="vc-badge vc-badge-client">Клиент</span>'
+      : '<span class="vc-badge vc-badge-soon">Скоро</span>';
+
+    card.innerHTML = `
+      <div class="version-card-media"></div>
+      <div class="version-card-badges">${badge}</div>
+      <div class="version-card-body">
+        <div class="version-card-title">${escapeHtml(v.title)}</div>
+        <div class="version-card-sub">${escapeHtml(v.subtitle || "")}</div>
+      </div>
+      <div class="version-card-arrow">${ready ? CARD_ARROW : ""}</div>
+    `;
+
+    if (ready) {
+      card.addEventListener("click", () => selectVersion(v));
+    }
+    el.versionGrid.appendChild(card);
+  }
+
+  if (versions.length === 0) {
+    el.versionGrid.innerHTML = '<div class="optional-empty">В манифесте нет ни одной версии.</div>';
+  }
+}
+
+function selectVersion(v) {
+  state.selected = v;
+  el.titlebarTitle.textContent = v.title;
+  el.btnHome.classList.remove("hidden");
+
+  el.homeScreen.classList.add("hidden");
+  el.playScreen.classList.remove("hidden");
+
+  el.newsText.textContent = v.news || "";
+  renderFooterLinks(state.manifest.links || {});
+  showIdle();
+  validateNick();
+}
+
+function goHome() {
+  state.selected = null;
+  el.screenOptional.classList.add("hidden");
+  el.playScreen.classList.add("hidden");
+  el.homeScreen.classList.remove("hidden");
+  el.btnHome.classList.add("hidden");
+  el.titlebarTitle.textContent = "Wanderlust";
+}
+
 // ---------- Прогресс / ошибка (состояния action-area) ----------
 
+function setBackAvailable(available) {
+  // Во время установки уходить с версии нельзя — прячем кнопку "назад".
+  el.btnHome.classList.toggle("hidden", !available || !state.selected);
+}
+
 function showIdle() {
-  el.playBtn.classList.remove("hidden");
+  el.actionRow.classList.remove("hidden");
   el.progressArea.classList.add("hidden");
   el.errorArea.classList.add("hidden");
+  setBackAvailable(true);
 }
 
 function showProgress() {
-  el.playBtn.classList.add("hidden");
+  el.actionRow.classList.add("hidden");
   el.progressArea.classList.remove("hidden");
   el.errorArea.classList.add("hidden");
+  setBackAvailable(false);
 }
 
 let lastErrorText = "";
 
 function showError(message) {
   lastErrorText = message;
-  el.playBtn.classList.add("hidden");
+  el.actionRow.classList.add("hidden");
   el.progressArea.classList.add("hidden");
   el.errorArea.classList.remove("hidden");
   el.errorText.textContent = message;
+  setBackAvailable(true);
 }
 
 document.getElementById("btn-error-back").addEventListener("click", showIdle);
@@ -177,13 +236,13 @@ listen("game-exited", (event) => {
 // ---------- Кнопка ИГРАТЬ ----------
 
 el.playBtn.addEventListener("click", async () => {
-  if (el.playBtn.disabled) return;
+  if (el.playBtn.disabled || !state.selected) return;
   showProgress();
   el.progressFill.style.width = "0%";
   el.progressLabel.textContent = "Подготовка...";
 
   try {
-    await invoke("launch", { nick: el.nickInput.value, packId: state.selectedPackId });
+    await invoke("launch", { versionId: state.selected.id, nick: el.nickInput.value });
     // Пайплайн установки завершился и игра реально запущена (spawn прошёл) —
     // сворачиваем лаунчер, не закрываем. Возврат/ошибку игры отследит
     // слушатель события game-exited выше.
@@ -202,30 +261,31 @@ document.getElementById("btn-back-optional").addEventListener("click", () => {
 });
 
 async function openOptionalScreen() {
-  if (!state.selectedPackId || !state.manifest) return;
-  const pack = state.manifest.packs.find((p) => p.id === state.selectedPackId);
-  if (!pack) return;
+  if (!state.selected) return;
 
   el.screenOptional.classList.remove("hidden");
   el.optionalList.innerHTML = '<div class="optional-empty">Загрузка списка модов...</div>';
 
   try {
-    const mods = await invoke("get_optional_mods", { packwizUrl: pack.packwiz_url });
-    renderOptionalMods(pack.id, mods);
+    const mods = await invoke("get_optional_mods", { packwizUrl: state.selected.pack.packwiz_url });
+    renderOptionalMods(mods);
   } catch (e) {
     flog("error", `get_optional_mods: ${e}`);
     el.optionalList.innerHTML = `<div class="optional-empty">Не удалось загрузить список: ${escapeHtml(String(e))}</div>`;
   }
 }
 
-function renderOptionalMods(packId, mods) {
+function renderOptionalMods(mods) {
   el.optionalList.innerHTML = "";
   if (mods.length === 0) {
-    el.optionalList.innerHTML = '<div class="optional-empty">У этого пака нет опциональных модов.</div>';
+    el.optionalList.innerHTML = '<div class="optional-empty">У этой сборки нет опциональных модов.</div>';
     return;
   }
 
-  const saved = (state.settings.optional_mods && state.settings.optional_mods[packId]) || {};
+  // Выбор опциональных модов хранится раздельно по версиям (см. settings.rs).
+  const versionId = state.selected.id;
+  if (!state.settings.optional_mods) state.settings.optional_mods = {};
+  const saved = state.settings.optional_mods[versionId] || {};
 
   for (const mod of mods) {
     const checked = Object.prototype.hasOwnProperty.call(saved, mod.id) ? saved[mod.id] : mod.default_value;
@@ -244,8 +304,8 @@ function renderOptionalMods(packId, mods) {
     const checkbox = item.querySelector("input");
     checkbox.addEventListener("change", () => {
       if (!state.settings.optional_mods) state.settings.optional_mods = {};
-      if (!state.settings.optional_mods[packId]) state.settings.optional_mods[packId] = {};
-      state.settings.optional_mods[packId][mod.id] = checkbox.checked;
+      if (!state.settings.optional_mods[versionId]) state.settings.optional_mods[versionId] = {};
+      state.settings.optional_mods[versionId][mod.id] = checkbox.checked;
       invoke("save_settings", { settings: state.settings }).catch((e) => flog("error", `save_settings: ${e}`));
     });
     el.optionalList.appendChild(item);
@@ -259,7 +319,7 @@ async function init() {
     state.settings = await invoke("get_settings");
   } catch (e) {
     flog("error", `get_settings: ${e}`);
-    state.settings = { nickname: "", selected_pack: "", ram_mb: 2048, optional_mods: {} };
+    state.settings = { nickname: "", ram_mb: 2048, optional_mods: {} };
   }
 
   el.nickInput.value = state.settings.nickname || "";
@@ -269,19 +329,11 @@ async function init() {
     state.manifest = await invoke("get_manifest");
   } catch (e) {
     flog("error", `get_manifest: ${e}`);
-    showError(`Не удалось загрузить манифест: ${e}`);
+    el.versionGrid.innerHTML = `<div class="optional-empty">Не удалось загрузить манифест: ${escapeHtml(String(e))}</div>`;
     return;
   }
 
-  el.newsText.textContent = state.manifest.news || "";
-  renderFooterLinks(state.manifest.links || {});
-  renderPackCards(state.manifest.packs || []);
-
-  if (state.settings.selected_pack && state.manifest.packs.some((p) => p.id === state.settings.selected_pack)) {
-    selectPack(state.settings.selected_pack);
-  } else if (state.manifest.packs.length > 0) {
-    selectPack(state.manifest.packs[0].id);
-  }
+  renderVersionGrid(state.manifest.versions || []);
 
   flog("info", "frontend initialised");
 

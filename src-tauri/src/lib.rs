@@ -19,6 +19,7 @@ pub mod settings;
 pub mod update;
 pub mod version;
 
+use anyhow::Context as _;
 use tauri::Emitter;
 
 // TODO: заменить на реальный https://<...>.github.io/.../manifest.json
@@ -35,13 +36,13 @@ async fn get_manifest() -> Result<manifest::Manifest, String> {
 
 #[tauri::command]
 fn get_settings() -> Result<settings::Settings, String> {
-    let paths = paths::AppPaths::new().map_err(|e| format!("{e:#}"))?;
+    let paths = paths::AppPaths::global().map_err(|e| format!("{e:#}"))?;
     settings::load_settings(&paths).map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
 fn save_settings(settings: settings::Settings) -> Result<(), String> {
-    let paths = paths::AppPaths::new().map_err(|e| format!("{e:#}"))?;
+    let paths = paths::AppPaths::global().map_err(|e| format!("{e:#}"))?;
     paths.ensure_dirs().map_err(|e| format!("{e:#}"))?;
     settings::save_settings(&paths, &settings).map_err(|e| format!("{e:#}"))
 }
@@ -96,12 +97,22 @@ async fn check_for_update() -> Result<bool, String> {
 }
 
 #[tauri::command]
-async fn launch(app: tauri::AppHandle, nick: String, pack_id: String) -> Result<(), String> {
-    run_launch_pipeline(app, nick, pack_id).await.map_err(|e| format!("{e:#}"))
+async fn launch(app: tauri::AppHandle, version_id: String, nick: String) -> Result<(), String> {
+    run_launch_pipeline(app, version_id, nick).await.map_err(|e| format!("{e:#}"))
 }
 
-async fn run_launch_pipeline(app: tauri::AppHandle, nick: String, pack_id: String) -> anyhow::Result<()> {
-    let paths = paths::AppPaths::new()?;
+async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: String) -> anyhow::Result<()> {
+    let manifest = manifest::load_manifest(MANIFEST_SOURCE).await?;
+    let ver = manifest
+        .version(&version_id)
+        .with_context(|| format!("Версия '{version_id}' не найдена в манифесте"))?
+        .clone();
+    if ver.status != "ready" {
+        anyhow::bail!("Версия «{}» ещё недоступна для запуска", ver.title);
+    }
+
+    // Своя game-папка и JRE у каждой версии — см. paths.rs.
+    let paths = paths::AppPaths::for_version(&ver.id, ver.java.major)?;
     paths.ensure_dirs()?;
 
     let app_for_events = app.clone();
@@ -109,36 +120,28 @@ async fn run_launch_pipeline(app: tauri::AppHandle, nick: String, pack_id: Strin
         let _ = app_for_events.emit("progress", ev);
     });
 
-    let manifest = manifest::load_manifest(MANIFEST_SOURCE).await?;
-    let pack = manifest
-        .packs
-        .iter()
-        .find(|p| p.id == pack_id)
-        .ok_or_else(|| anyhow::anyhow!("Пак \"{pack_id}\" не найден в манифесте"))?;
-    let packwiz_url = pack.packwiz_url.clone();
+    let packwiz_url = ver.pack.packwiz_url.clone();
 
-    let java_exe = jre::ensure_jre(&paths, &manifest.java.windows_x64, &reporter).await?;
-    neoforge::ensure_neoforge_installed(&paths, &java_exe, &manifest.neoforge.version, &reporter).await?;
+    let java_exe = jre::ensure_jre(&paths, &ver.java.windows_x64, &reporter).await?;
+    neoforge::ensure_neoforge_installed(&paths, &java_exe, &ver.neoforge.version, &reporter).await?;
 
-    let neoforge_id = format!("neoforge-{}", manifest.neoforge.version);
+    let neoforge_id = format!("neoforge-{}", ver.neoforge.version);
     let merged_version = version::load_merged_version(&paths.game_dir, &neoforge_id)?;
     libraries::ensure_libraries(&paths, &merged_version, &reporter).await?;
     assets::ensure_assets(&paths, &merged_version, &reporter).await?;
 
     packwiz::sync_modpack(&paths, &java_exe, &packwiz_url, &reporter).await?;
 
-    // Сохраняем ник/пак сразу после успешного клика "Играть", и применяем
+    // Сохраняем ник сразу после успешного клика "Играть", и применяем
     // выбор опциональных модов поверх обычного синка — CLI packwiz-installer
-    // сам спрашивать про опции не умеет (см. packwiz.rs).
+    // сам спрашивать про опции не умеет (см. packwiz.rs). Настройки общие для
+    // всех версий, но выбор опций берём для текущей (optional_for).
     let mut settings = settings::load_settings(&paths)?;
     settings.nickname = nick.clone();
-    settings.selected_pack = pack_id.clone();
     settings::save_settings(&paths, &settings)?;
 
-    if let Some(choices) = settings.optional_mods.get(&pack_id).cloned() {
-        if packwiz::reconcile_optional_mods(&paths, &choices).await? {
-            packwiz::sync_modpack(&paths, &java_exe, &packwiz_url, &reporter).await?;
-        }
+    if packwiz::reconcile_optional_mods(&paths, &settings.optional_for(&ver.id)).await? {
+        packwiz::sync_modpack(&paths, &java_exe, &packwiz_url, &reporter).await?;
     }
 
     let mut child = launch::launch_game(&paths, &java_exe, &merged_version, &nick, &reporter)?;
