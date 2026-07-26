@@ -57,7 +57,95 @@ const el = {
   progressTip: document.getElementById("progress-tip"),
   tipText: document.getElementById("tip-text"),
   tipTitle: document.getElementById("tip-title"),
+  serverStatus: document.getElementById("server-status"),
+  serverDot: document.getElementById("server-dot"),
+  serverText: document.getElementById("server-text"),
+  serverPing: document.getElementById("server-ping"),
+  btnGameFolder: document.getElementById("btn-game-folder"),
+  btnCopyIp: document.getElementById("btn-copy-ip"),
+  copyIpLabel: document.getElementById("copy-ip-label"),
 };
+
+// ---------- Статус игрового сервера ----------
+
+let serverTimer = null;
+
+function serverAddress(ver) {
+  const host = ver && ver.server && ver.server.host;
+  if (!host) return null;
+  const port = ver.server.port || 25565;
+  return { host, port, display: port === 25565 ? host : `${host}:${port}` };
+}
+
+async function refreshServerStatus() {
+  const addr = serverAddress(state.selected);
+  if (!addr) {
+    el.serverStatus.classList.add("hidden");
+    el.btnCopyIp.classList.add("hidden");
+    return;
+  }
+  el.serverStatus.classList.remove("hidden");
+  el.btnCopyIp.classList.remove("hidden");
+
+  try {
+    const s = await invoke("get_server_status", { host: addr.host, port: addr.port });
+    el.serverDot.classList.toggle("online", s.online);
+    el.serverDot.classList.toggle("offline", !s.online);
+    if (s.online) {
+      const word = pluralPlayers(s.players_online);
+      el.serverText.textContent = `Сервер онлайн · ${s.players_online} ${word}`;
+      el.serverPing.textContent = `${s.ping_ms} мс`;
+    } else {
+      el.serverText.textContent = "Сервер недоступен";
+      el.serverPing.textContent = "";
+    }
+  } catch (e) {
+    flog("warn", `get_server_status: ${e}`);
+    el.serverDot.classList.add("offline");
+    el.serverText.textContent = "Сервер недоступен";
+    el.serverPing.textContent = "";
+  }
+}
+
+function pluralPlayers(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "игрок";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "игрока";
+  return "игроков";
+}
+
+function startServerPolling() {
+  refreshServerStatus();
+  clearInterval(serverTimer);
+  serverTimer = setInterval(refreshServerStatus, 30000);
+}
+
+function stopServerPolling() {
+  clearInterval(serverTimer);
+  serverTimer = null;
+}
+
+// ---------- Быстрые действия ----------
+
+el.btnGameFolder.addEventListener("click", () => {
+  if (!state.selected) return;
+  invoke("open_game_folder", { versionId: state.selected.id }).catch((e) =>
+    flog("error", `open_game_folder: ${e}`)
+  );
+});
+
+el.btnCopyIp.addEventListener("click", async () => {
+  const addr = serverAddress(state.selected);
+  if (!addr) return;
+  try {
+    await navigator.clipboard.writeText(addr.display);
+    el.copyIpLabel.textContent = "Скопировано";
+    setTimeout(() => (el.copyIpLabel.textContent = "Адрес сервера"), 1600);
+  } catch (e) {
+    flog("error", `clipboard: ${e}`);
+  }
+});
 
 // ---------- Подсказки на время установки ----------
 
@@ -245,10 +333,12 @@ function selectVersion(v) {
   renderFooterLinks(state.manifest.links || {});
   showIdle();
   validateNick();
+  startServerPolling();
 }
 
 function goHome() {
   state.selected = null;
+  stopServerPolling();
   el.screenOptional.classList.add("hidden");
   el.playScreen.classList.add("hidden");
   el.homeScreen.classList.remove("hidden");

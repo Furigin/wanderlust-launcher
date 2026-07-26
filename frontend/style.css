@@ -507,6 +507,90 @@ body {
   background: rgba(124, 92, 255, 0.12);
 }
 
+/* ---------- Статус игрового сервера ---------- */
+
+.server-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  align-self: center;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+
+.server-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-2);
+  flex-shrink: 0;
+}
+
+.server-dot.online {
+  background: var(--ok);
+  box-shadow: 0 0 0 0 rgba(53, 214, 143, 0.55);
+  animation: server-pulse 2.2s ease-out infinite;
+}
+
+.server-dot.offline {
+  background: var(--danger);
+}
+
+@keyframes server-pulse {
+  to {
+    box-shadow: 0 0 0 7px rgba(53, 214, 143, 0);
+  }
+}
+
+.server-text {
+  font-weight: 600;
+}
+
+.server-ping {
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Быстрые действия ---------- */
+
+.quick-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.quick-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.quick-btn:hover {
+  color: var(--text-0);
+  border-color: var(--accent);
+  background: rgba(124, 92, 255, 0.12);
+}
+
+.quick-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
 /* ---------- Ссылки внизу ---------- */
 
 .footer-links {

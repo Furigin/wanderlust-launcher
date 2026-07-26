@@ -15,6 +15,7 @@ pub mod packwiz;
 pub mod packwiz_meta;
 pub mod paths;
 pub mod progress;
+pub mod server_status;
 pub mod settings;
 pub mod update;
 pub mod version;
@@ -68,6 +69,29 @@ fn frontend_log(level: String, message: String) {
         "warn" => log::warn!("[frontend] {message}"),
         _ => log::info!("[frontend] {message}"),
     }
+}
+
+/// Онлайн сервера выбранной версии. Ошибок не возвращает: недоступный
+/// сервер — обычное дело, виджет просто покажет «оффлайн».
+#[tauri::command]
+async fn get_server_status(host: String, port: u16) -> server_status::ServerStatus {
+    server_status::ping(&host, port).await
+}
+
+/// Открывает папку установки выбранной версии в проводнике — чтобы игрок
+/// мог достать скриншоты, миры или логи, не зная про %APPDATA%.
+#[tauri::command]
+async fn open_game_folder(app: tauri::AppHandle, version_id: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let manifest = manifest::load_manifest(MANIFEST_SOURCE).await.map_err(|e| format!("{e:#}"))?;
+    let ver = manifest
+        .version(&version_id)
+        .ok_or_else(|| format!("Версия '{version_id}' не найдена"))?;
+    let paths = paths::AppPaths::for_version(&ver.id, ver.java.major).map_err(|e| format!("{e:#}"))?;
+    paths.ensure_dirs().map_err(|e| format!("{e:#}"))?;
+    app.opener()
+        .open_path(paths.game_dir.display().to_string(), None::<&str>)
+        .map_err(|e| format!("{e}"))
 }
 
 #[tauri::command]
@@ -192,6 +216,8 @@ pub fn run() {
             get_settings,
             save_settings,
             get_optional_mods,
+            get_server_status,
+            open_game_folder,
             open_url,
             check_for_update,
             launch,

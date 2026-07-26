@@ -26,7 +26,10 @@ tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
 # Скачивание манифеста, JRE, installer-jar
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "time", "io-util"] }
+# "net" нужен для TcpStream в server_status.rs (пинг игрового сервера).
+# Указан явно: он подтягивался транзитивно через reqwest, и смена его
+# фич молча сломала бы сборку.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "time", "io-util", "net"] }
 futures-util = "0.3"
 # Проверка контрольных сумм скачанных файлов (Adoptium даёт sha256, maven — sha1)
 sha2 = "0.10"

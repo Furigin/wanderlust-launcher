@@ -33,6 +33,14 @@
     <div class="news" id="news-text"></div>
 
     <div class="center-column">
+      <!-- Живой статус игрового сервера. Скрыт, если в манифесте не задан
+           адрес сервера для этой сборки. -->
+      <div id="server-status" class="server-status hidden">
+        <span class="server-dot" id="server-dot"></span>
+        <span class="server-text" id="server-text">Проверяем сервер...</span>
+        <span class="server-ping" id="server-ping"></span>
+      </div>
+
       <input
         id="nick-input"
         class="nick-input"
@@ -81,6 +89,22 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="quick-actions" id="quick-actions">
+      <button class="quick-btn" id="btn-game-folder" title="Открыть папку со сборкой">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span>Папка игры</span>
+      </button>
+      <button class="quick-btn hidden" id="btn-copy-ip" title="Скопировать адрес сервера">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span id="copy-ip-label">Адрес сервера</span>
+      </button>
     </div>
 
     <div class="footer-links" id="footer-links"></div>
