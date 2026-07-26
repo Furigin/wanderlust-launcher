@@ -10,14 +10,15 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
 
-const LAUNCHER_NAME: &str = "ProjectLauncher";
-const LAUNCHER_VERSION: &str = "0.1.0";
+const LAUNCHER_NAME: &str = "Wanderlust";
+const LAUNCHER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn launch_game(
     paths: &AppPaths,
     java_exe: &Path,
     version: &MergedVersion,
     nick: &str,
+    ram_mb: u32,
     reporter: &ProgressReporter,
 ) -> Result<std::process::Child> {
     reporter.report("launch", "Запуск игры", 0, 1);
@@ -66,11 +67,20 @@ pub fn launch_game(
         .map(|a| substitute(a, &placeholders))
         .collect();
 
+    // Размер кучи в version JSON не задаётся вообще — без явного -Xmx игра
+    // стартует с дефолтом JVM (обычно ¼ ОЗУ), чего сборке из сотни модов
+    // не хватает и она падает по OutOfMemory. Ставим лимит первым аргументом,
+    // чтобы его нельзя было перебить чем-то из version JSON.
+    // -Xms держим небольшим: куча вырастет сама, а резервировать всё сразу
+    // на машинах с 8 ГБ вредно.
+    let heap_args = vec![format!("-Xmx{ram_mb}M"), "-Xms512M".to_string()];
+
     // jvm_args уже содержит "-cp" "${classpath}" (это часть arguments.jvm
     // в самом version JSON) — substitute() выше уже подставил туда путь,
     // добавлять classpath отдельно не нужно.
     let mut command = std::process::Command::new(java_exe);
     command
+        .args(&heap_args)
         .args(&jvm_args)
         .arg(&version.main_class)
         .args(&game_args)

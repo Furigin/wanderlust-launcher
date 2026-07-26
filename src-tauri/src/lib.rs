@@ -22,12 +22,15 @@ pub mod version;
 use anyhow::Context as _;
 use tauri::Emitter;
 
-// TODO: заменить на реальный https://<...>.github.io/.../manifest.json
-// перед раздачей игрокам. Локальный файл — только для разработки.
-// Путь строится от CARGO_MANIFEST_DIR (src-tauri/), а не от CWD процесса,
-// чтобы приложение работало одинаково независимо от того, откуда его
-// запустили (важно и для `cargo run`, и для собранного .exe).
+// В dev-сборке (`cargo tauri dev`) читаем локальный манифест — удобно
+// тестировать без публикации. Путь строится от CARGO_MANIFEST_DIR (src-tauri/),
+// а не от CWD процесса, чтобы работало одинаково откуда бы ни запустили.
+// В релизной сборке (`cargo tauri build`) — боевой манифест с GitHub Pages,
+// который и видят игроки.
+#[cfg(debug_assertions)]
 pub const MANIFEST_SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../dev/manifest.dev.json");
+#[cfg(not(debug_assertions))]
+pub const MANIFEST_SOURCE: &str = "https://furigin.github.io/wanderlust_launcher/manifest.json";
 
 #[tauri::command]
 async fn get_manifest() -> Result<manifest::Manifest, String> {
@@ -144,7 +147,14 @@ async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: St
         packwiz::sync_modpack(&paths, &java_exe, &packwiz_url, &reporter).await?;
     }
 
-    let mut child = launch::launch_game(&paths, &java_exe, &merged_version, &nick, &reporter)?;
+    let mut child = launch::launch_game(
+        &paths,
+        &java_exe,
+        &merged_version,
+        &nick,
+        settings.ram_mb,
+        &reporter,
+    )?;
 
     // Игровой процесс ждём в отдельном потоке — команда должна вернуться
     // сразу же, чтобы фронт мог свернуть окно, не блокируясь на всей сессии.

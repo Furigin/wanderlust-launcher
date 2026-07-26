@@ -8,3 +8,6 @@ claude.exe
 # IDE
 .vscode/
 .idea/
+
+# Инструмент сборки паков, не часть исходников лаунчера
+packwiz.exe

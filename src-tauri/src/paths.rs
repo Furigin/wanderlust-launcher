@@ -8,8 +8,9 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-// TODO: заменить на реальное имя проекта перед раздачей игрокам.
-pub const PROJECT_DIR_NAME: &str = "ProjectLauncher";
+// Имя папки в %APPDATA%. Менять после релиза нельзя: у игроков установка
+// уедет на новое место и всё (JRE, NeoForge, моды) перекачается заново.
+pub const PROJECT_DIR_NAME: &str = "Wanderlust";
 
 #[derive(Debug, Clone)]
 pub struct AppPaths {

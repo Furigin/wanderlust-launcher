@@ -27,8 +27,10 @@ impl Settings {
     }
 }
 
+/// 4 ГБ — рабочий минимум для сборки из сотни модов с Create. На 2 ГБ
+/// (прежний дефолт) игра падает по OutOfMemory ещё на генерации мира.
 fn default_ram_mb() -> u32 {
-    2048
+    4096
 }
 
 impl Default for Settings {

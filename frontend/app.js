@@ -50,7 +50,30 @@ const el = {
   settingsBtn: document.getElementById("btn-settings"),
   screenOptional: document.getElementById("screen-optional"),
   optionalList: document.getElementById("optional-list"),
+  ramSlider: document.getElementById("ram-slider"),
+  ramValue: document.getElementById("ram-value"),
 };
+
+// ---------- Оперативная память ----------
+
+function formatRam(mb) {
+  return mb >= 1024 && mb % 1024 === 0 ? `${mb / 1024} ГБ` : `${mb} МБ`;
+}
+
+function initRamControl() {
+  const mb = state.settings.ram_mb || 4096;
+  el.ramSlider.value = mb;
+  el.ramValue.textContent = formatRam(mb);
+
+  // input — только рисуем подпись (событий много), change — сохраняем один раз
+  el.ramSlider.addEventListener("input", () => {
+    el.ramValue.textContent = formatRam(Number(el.ramSlider.value));
+  });
+  el.ramSlider.addEventListener("change", () => {
+    state.settings.ram_mb = Number(el.ramSlider.value);
+    invoke("save_settings", { settings: state.settings }).catch((e) => flog("error", `save_settings: ${e}`));
+  });
+}
 
 // ---------- Титульная строка ----------
 
@@ -324,6 +347,7 @@ async function init() {
 
   el.nickInput.value = state.settings.nickname || "";
   validateNick();
+  initRamControl();
 
   try {
     state.manifest = await invoke("get_manifest");
