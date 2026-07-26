@@ -2,7 +2,7 @@
 // системную JVM: если она есть, но не той версии, игра упадёт на
 // "Unsupported class file version" ещё до того как игрок увидит окно.
 // Поэтому лаунчер всегда носит с собой свою copy JRE, скачанную с Adoptium.
-use crate::downloader::{download_and_verify, HashAlgo};
+use crate::downloader::{download_and_verify_with_progress, HashAlgo};
 use crate::manifest::JavaBinary;
 use crate::paths::AppPaths;
 use crate::progress::ProgressReporter;
@@ -25,9 +25,18 @@ pub async fn ensure_jre(paths: &AppPaths, java: &JavaBinary, reporter: &Progress
     let zip_path = paths.runtime_dir.join("jre-download.zip");
     let client = reqwest::Client::new();
 
-    download_and_verify(&client, &java.url, HashAlgo::Sha256, &java.sha256, &zip_path)
-        .await
-        .context("Не удалось скачать Java Runtime")?;
+    // JRE — крупный одиночный файл (~45 МБ), без побайтового отчёта
+    // индикатор замирал бы тут на всё время скачивания.
+    download_and_verify_with_progress(
+        &client,
+        &java.url,
+        HashAlgo::Sha256,
+        &java.sha256,
+        &zip_path,
+        |done, total| reporter.report_bytes("java", "Скачивание Java", done, total),
+    )
+    .await
+    .context("Не удалось скачать Java Runtime")?;
 
     reporter.report("java", "Распаковка Java Runtime", 0, 1);
 

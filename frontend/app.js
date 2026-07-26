@@ -52,7 +52,67 @@ const el = {
   optionalList: document.getElementById("optional-list"),
   ramSlider: document.getElementById("ram-slider"),
   ramValue: document.getElementById("ram-value"),
+  progressBar: document.getElementById("progress-bar"),
+  progressPercent: document.getElementById("progress-percent"),
+  progressTip: document.getElementById("progress-tip"),
+  tipText: document.getElementById("tip-text"),
+  tipTitle: document.getElementById("tip-title"),
 };
+
+// ---------- Подсказки на время установки ----------
+
+// Первая установка — это несколько минут и больше гигабайта загрузки.
+// Крутим подсказки, чтобы ожидание не было пустым экраном с полоской.
+const TIPS = [
+  ["Управление", "Клавиша <b>R</b> над предметом в JEI покажет, как его скрафтить, а <b>U</b> — что из него делают."],
+  ["Create", "Гаечный ключ поворачивает механизмы, а с <b>Shift</b> — разбирает их и возвращает в инвентарь."],
+  ["Create", "Не гонитесь за скоростью: чем быстрее вращается механизм, тем больше он жрёт мощности. Иногда выгоднее поставить второй."],
+  ["Create", "Кликните по механизму гаечным ключом, удерживая <b>Ctrl</b>, — увидите схему передачи вращения."],
+  ["Совет", "Не выделяйте лаунчеру больше половины оперативной памяти компьютера — остальное нужно системе, иначе игра начнёт тормозить."],
+  ["Совет", "Понадобился мод из списка дополнительных? Включите его в настройках — он докачается при следующем запуске."],
+  ["Create", "Инженерный чертёж и Схематическая пушка позволяют копировать постройки. Очень выручает при строительстве заводов."],
+  ["Производительность", "Если игра идёт рывками, убавьте дальность прорисовки до 8–10 чанков — на модовых сборках это помогает сильнее всего."],
+  ["Знаете ли вы", "Все моды сборки обновляются сами: при каждом запуске лаунчер сверяет их с сервером и докачивает изменения."],
+  ["Совет", "Ваши миры, скриншоты и настройки хранятся отдельно от модов, поэтому обновление сборки их не тронет."],
+  ["Create", "Механический пресс, миксер и печь можно объединить в одну линию с воронками — так завод займёт меньше места."],
+  ["Знаете ли вы", "Кнопка «Играть» не качает всё заново: сравниваются контрольные суммы, и скачивается только то, что изменилось."],
+];
+
+let tipTimer = null;
+let tipIndex = 0;
+
+function showNextTip() {
+  const [title, text] = TIPS[tipIndex % TIPS.length];
+  tipIndex += 1;
+  el.progressTip.classList.remove("tip-visible");
+  // Небольшая пауза — чтобы отработало затухание перед сменой текста
+  setTimeout(() => {
+    el.tipTitle.textContent = title;
+    el.tipText.innerHTML = text;
+    el.progressTip.classList.add("tip-visible");
+  }, 220);
+}
+
+function startTips() {
+  tipIndex = Math.floor(Math.random() * TIPS.length); // не всегда с одной и той же
+  showNextTip();
+  clearInterval(tipTimer);
+  tipTimer = setInterval(showNextTip, 9000);
+}
+
+function stopTips() {
+  clearInterval(tipTimer);
+  tipTimer = null;
+}
+
+// ---------- Форматирование прогресса ----------
+
+function formatBytes(n) {
+  if (n >= 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(1)} ГБ`;
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} МБ`;
+  if (n >= 1024) return `${Math.round(n / 1024)} КБ`;
+  return `${n} Б`;
+}
 
 // ---------- Оперативная память ----------
 
@@ -207,6 +267,9 @@ function showIdle() {
   el.actionRow.classList.remove("hidden");
   el.progressArea.classList.add("hidden");
   el.errorArea.classList.add("hidden");
+  el.progressTip.classList.add("hidden");
+  el.nickInput.classList.remove("hidden");
+  stopTips();
   setBackAvailable(true);
 }
 
@@ -214,6 +277,11 @@ function showProgress() {
   el.actionRow.classList.add("hidden");
   el.progressArea.classList.remove("hidden");
   el.errorArea.classList.add("hidden");
+  // Ник во время установки менять уже поздно — на его месте показываем
+  // подсказки, чтобы ожидание не было пустым.
+  el.nickInput.classList.add("hidden");
+  el.progressTip.classList.remove("hidden");
+  startTips();
   setBackAvailable(false);
 }
 
@@ -224,6 +292,9 @@ function showError(message) {
   el.actionRow.classList.add("hidden");
   el.progressArea.classList.add("hidden");
   el.errorArea.classList.remove("hidden");
+  el.progressTip.classList.add("hidden");
+  el.nickInput.classList.remove("hidden");
+  stopTips();
   el.errorText.textContent = message;
   setBackAvailable(true);
 }
@@ -238,10 +309,27 @@ document.getElementById("btn-copy-log").addEventListener("click", async () => {
 });
 
 listen("progress", (event) => {
-  const { label, current, total } = event.payload;
-  const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
-  el.progressFill.style.width = `${pct}%`;
-  el.progressLabel.textContent = total > 1 ? `${label} (${current}/${total})` : label;
+  const { label, current, total, unit } = event.payload;
+
+  // total = 0 или 1 — объём работы неизвестен (распаковка, установка
+  // NeoForge). Показываем бегущую заливку вместо застывшего нуля.
+  const determinate = total > 1;
+  el.progressBar.classList.toggle("indeterminate", !determinate);
+
+  if (determinate) {
+    const pct = Math.min(100, Math.round((current / total) * 100));
+    el.progressFill.style.width = `${pct}%`;
+    el.progressPercent.textContent = `${pct}%`;
+    const detail =
+      unit === "bytes"
+        ? `${formatBytes(current)} / ${formatBytes(total)}`
+        : `${current} / ${total}`;
+    el.progressLabel.textContent = `${label} · ${detail}`;
+  } else {
+    el.progressFill.style.width = "100%";
+    el.progressPercent.textContent = "";
+    el.progressLabel.textContent = label;
+  }
 });
 
 listen("game-exited", (event) => {

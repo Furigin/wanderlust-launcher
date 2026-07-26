@@ -42,6 +42,16 @@
         spellcheck="false"
       />
 
+      <!-- Показывается вместо поля ника, пока идёт установка: первая
+           загрузка занимает минуты, и пустое ожидание раздражает. -->
+      <div id="progress-tip" class="progress-tip hidden">
+        <div class="progress-tip-icon" id="tip-icon">◆</div>
+        <div class="progress-tip-body">
+          <div class="progress-tip-title" id="tip-title">Знаете ли вы</div>
+          <div class="progress-tip-text" id="tip-text"></div>
+        </div>
+      </div>
+
       <div class="action-area">
         <div id="action-row" class="action-row">
           <button id="btn-play" class="play-btn" disabled>ИГРАТЬ</button>
@@ -55,9 +65,11 @@
         </div>
 
         <div id="progress-area" class="progress-area hidden">
-          <div class="progress-bar">
+          <div class="progress-bar" id="progress-bar">
             <div class="progress-bar-fill" id="progress-fill"></div>
+            <div class="progress-shine"></div>
             <div class="progress-label" id="progress-label">Подготовка...</div>
+            <div class="progress-percent" id="progress-percent"></div>
           </div>
         </div>
 

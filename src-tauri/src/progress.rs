@@ -10,6 +10,9 @@ pub struct ProgressEvent {
     pub label: String,
     pub current: u64,
     pub total: u64,
+    /// "count" — штуки (файлы/моды), "bytes" — байты. Фронту нужно, чтобы
+    /// показать «12 / 230 файлов» против «34.1 / 45.7 МБ», а не сырые числа.
+    pub unit: &'static str,
 }
 
 #[derive(Clone)]
@@ -31,6 +34,19 @@ impl ProgressReporter {
             label: label.to_string(),
             current,
             total,
+            unit: "count",
+        });
+    }
+
+    /// Отчёт о скачанных байтах. Отдельный метод, а не флаг в `report`, —
+    /// чтобы места вызова читались однозначно.
+    pub fn report_bytes(&self, stage: &str, label: &str, done: u64, total: u64) {
+        (self.0)(ProgressEvent {
+            stage: stage.to_string(),
+            label: label.to_string(),
+            current: done,
+            total,
+            unit: "bytes",
         });
     }
 }

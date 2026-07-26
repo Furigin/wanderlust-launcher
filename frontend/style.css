@@ -306,8 +306,150 @@ body {
 .progress-bar-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
-  transition: width 0.25s ease;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.09) 0 12px,
+      transparent 12px 24px
+    ),
+    linear-gradient(135deg, var(--accent), var(--accent-dim));
+  background-size: 34px 100%, 100% 100%;
+  animation: stripes 0.9s linear infinite;
+  transition: width 0.3s ease;
+}
+
+/* Полоски ползут вправо — видно, что процесс идёт, даже когда счётчик
+   надолго замирает на крупном файле. */
+@keyframes stripes {
+  to {
+    background-position: 34px 0, 0 0;
+  }
+}
+
+/* Блик, пробегающий по всей полосе. */
+.progress-shine {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  animation: shine 2.4s ease-in-out infinite;
+}
+
+@keyframes shine {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+.progress-percent {
+  position: absolute;
+  top: 0;
+  right: 14px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-0);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+}
+
+/* Объём работы неизвестен (распаковка, установка NeoForge): заливка на всю
+   ширину, но приглушённая и «дышащая», чтобы не выглядеть как готовые 100%. */
+.progress-bar.indeterminate .progress-bar-fill {
+  opacity: 0.42;
+  animation: stripes 0.9s linear infinite, breathe 1.9s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ---------- Подсказки во время установки ---------- */
+
+.progress-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.progress-tip.tip-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.progress-tip-icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--accent);
+  background: rgba(124, 92, 255, 0.14);
+  animation: tip-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes tip-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+.progress-tip-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-tip-title {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-bottom: 3px;
+}
+
+.progress-tip-text {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-1);
+}
+
+.progress-tip-text b {
+  color: var(--text-0);
+  font-weight: 700;
 }
 
 .progress-label {

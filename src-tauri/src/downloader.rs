@@ -24,6 +24,21 @@ pub async fn download_and_verify(
     expected_hash: &str,
     dest: &Path,
 ) -> Result<()> {
+    download_and_verify_with_progress(client, url, algo, expected_hash, dest, |_, _| {}).await
+}
+
+/// То же самое, но с отчётом о скачанных байтах — для крупных одиночных
+/// файлов (JRE, установщик NeoForge), где иначе индикатор надолго замирает.
+/// `on_progress(скачано, всего)`; `всего` = 0, если сервер не отдал
+/// Content-Length.
+pub async fn download_and_verify_with_progress(
+    client: &reqwest::Client,
+    url: &str,
+    algo: HashAlgo,
+    expected_hash: &str,
+    dest: &Path,
+    on_progress: impl Fn(u64, u64) + Send + Sync,
+) -> Result<()> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Не удалось создать папку {}", parent.display()))?;
@@ -36,7 +51,7 @@ pub async fn download_and_verify(
 
     let mut last_err = None;
     for attempt in 1..=MAX_ATTEMPTS {
-        match try_download(client, url, algo_clone(&algo), expected_hash, &tmp_path).await {
+        match try_download(client, url, algo_clone(&algo), expected_hash, &tmp_path, &on_progress).await {
             Ok(()) => {
                 // Атомарная замена: если whole-file запись прошла и хеш совпал,
                 // только теперь файл становится "видимым" под финальным именем.
@@ -76,6 +91,7 @@ async fn try_download(
     algo: HashAlgo,
     expected_hash: &str,
     tmp_path: &Path,
+    on_progress: &(impl Fn(u64, u64) + Send + Sync),
 ) -> Result<()> {
     let response = client
         .get(url)
@@ -85,6 +101,8 @@ async fn try_download(
         .error_for_status()
         .context("Сервер вернул код ошибки")?;
 
+    let total = response.content_length().unwrap_or(0);
+
     let mut file = tokio::fs::File::create(tmp_path)
         .await
         .with_context(|| format!("Не удалось создать временный файл {}", tmp_path.display()))?;
@@ -92,6 +110,7 @@ async fn try_download(
     let mut sha256 = sha2::Sha256::new();
     let mut sha1 = sha1::Sha1::new();
     let mut stream = response.bytes_stream();
+    let mut downloaded: u64 = 0;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.context("Обрыв соединения во время скачивания")?;
@@ -102,6 +121,8 @@ async fn try_download(
         file.write_all(&chunk)
             .await
             .context("Не удалось записать данные на диск (нет места?)")?;
+        downloaded += chunk.len() as u64;
+        on_progress(downloaded, total);
     }
     file.flush().await.context("Не удалось сохранить файл на диск")?;
     drop(file);

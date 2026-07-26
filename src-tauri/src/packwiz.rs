@@ -47,8 +47,16 @@ pub async fn sync_modpack(
     let game_dir = paths.game_dir.clone();
     let tools_dir = paths.tools_dir.clone();
 
+    let reporter_for_task = reporter.clone();
     tokio::task::spawn_blocking(move || {
-        run_bootstrap(&java_exe, &bootstrap_jar, &tools_dir, &game_dir, &packwiz_url)
+        run_bootstrap(
+            &java_exe,
+            &bootstrap_jar,
+            &tools_dir,
+            &game_dir,
+            &packwiz_url,
+            &reporter_for_task,
+        )
     })
     .await
     .context("Поток packwiz-installer аварийно завершился")??;
@@ -63,12 +71,21 @@ fn run_bootstrap(
     tools_dir: &std::path::Path,
     game_dir: &std::path::Path,
     packwiz_url: &str,
+    reporter: &ProgressReporter,
 ) -> Result<()> {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+
     // current_dir — tools_dir: именно туда bootstrap кэширует свою
     // скачанную копию packwiz-installer.jar (проверено эмпирически — она
     // появляется рядом с CWD процесса, а не рядом с самим bootstrap.jar).
     // --pack-folder при этом отдельно указывает, куда класть сами моды.
-    let output = std::process::Command::new(java_exe)
+    //
+    // Читаем stdout построчно, а не через .output(): скачивание сотен модов
+    // занимает минуты, и без живого прогресса игрок видит замерший на нуле
+    // индикатор и решает, что лаунчер завис. packwiz-installer печатает
+    // строки вида "(45/491) Downloaded foo.jar" — из них и берём счётчик.
+    let mut child = std::process::Command::new(java_exe)
         .arg("-jar")
         .arg(bootstrap_jar)
         .arg("--no-gui")
@@ -78,16 +95,71 @@ fn run_bootstrap(
         .arg(game_dir)
         .arg(packwiz_url)
         .current_dir(tools_dir)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .context("Не удалось запустить packwiz-installer")?;
 
-    if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Синхронизация модов завершилась с ошибкой:\n{stdout}\n{stderr}");
+    let stdout = child.stdout.take().expect("stdout запрошен как piped");
+    let stderr = child.stderr.take().expect("stderr запрошен как piped");
+
+    // stderr читаем отдельным потоком: если его не вычитывать, буфер трубы
+    // переполнится и процесс намертво встанет на записи в него.
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = String::new();
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            buf.push_str(&line);
+            buf.push('\n');
+        }
+        buf
+    });
+
+    let mut tail = Vec::new();
+    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        if let Some((current, total)) = parse_progress_line(&line) {
+            reporter.report("sync", "Скачивание модов", current, total);
+        }
+        // Держим только хвост — на случай ошибки его покажем игроку,
+        // полный лог из сотен строк в сообщение об ошибке не нужен.
+        tail.push(line);
+        if tail.len() > 40 {
+            tail.remove(0);
+        }
+    }
+
+    let status = child.wait().context("Не удалось дождаться packwiz-installer")?;
+    let stderr_text = stderr_handle.join().unwrap_or_default();
+
+    if !status.success() {
+        let stdout_text = tail.join("\n");
+        bail!("Синхронизация модов завершилась с ошибкой:\n{stdout_text}\n{stderr_text}");
     }
 
     Ok(())
+}
+
+/// Вытаскивает счётчик из строки вида "(45/491) Downloaded foo.jar".
+/// Возвращает None для всех прочих строк вывода.
+fn parse_progress_line(line: &str) -> Option<(u64, u64)> {
+    let rest = line.strip_prefix('(')?;
+    let (numbers, _) = rest.split_once(')')?;
+    let (current, total) = numbers.split_once('/')?;
+    Some((current.trim().parse().ok()?, total.trim().parse().ok()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_progress_line;
+
+    #[test]
+    fn parses_packwiz_counter() {
+        assert_eq!(parse_progress_line("(45/491) Downloaded foo.jar"), Some((45, 491)));
+        assert_eq!(parse_progress_line("(1/1) Modpack files are already up to date!"), Some((1, 1)));
+        // Строки без счётчика игнорируем, а не падаем на них.
+        assert_eq!(parse_progress_line("Loading manifest file..."), None);
+        assert_eq!(parse_progress_line("(abc/def) мусор"), None);
+        assert_eq!(parse_progress_line(""), None);
+    }
 }
 
 /// CLI-режим packwiz-installer НЕ умеет спрашивать про опциональные моды —
