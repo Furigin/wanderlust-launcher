@@ -466,6 +466,10 @@ function selectVersion(v) {
   el.titlebarTitle.textContent = v.title;
   el.btnHome.classList.remove("hidden");
 
+  // Фон сборки включаем только внутри неё: экран выбора остаётся
+  // нейтральным и не окрашен под одну из версий.
+  applyVersionBackground(v.id);
+
   el.homeScreen.classList.add("hidden");
   el.playScreen.classList.remove("hidden");
 
@@ -476,8 +480,22 @@ function selectVersion(v) {
   startServerPolling();
 }
 
+/// Ставит на body класс с фоном выбранной сборки, снимая предыдущий.
+/// `null` — вернуться к нейтральному фону главного экрана.
+function applyVersionBackground(versionId) {
+  for (const cls of Array.from(document.body.classList)) {
+    if (cls.startsWith("bg-")) document.body.classList.remove(cls);
+  }
+  if (versionId) {
+    document.body.classList.add(`bg-${versionId}`, "version-bg-on");
+  } else {
+    document.body.classList.remove("version-bg-on");
+  }
+}
+
 function goHome() {
   state.selected = null;
+  applyVersionBackground(null);
   stopServerPolling();
   el.screenOptional.classList.add("hidden");
   el.playScreen.classList.add("hidden");
@@ -530,6 +548,9 @@ function showError(message) {
 }
 
 document.getElementById("btn-error-back").addEventListener("click", showIdle);
+document.getElementById("btn-open-logs").addEventListener("click", () => {
+  invoke("open_logs_folder").catch((e) => flog("error", `open_logs_folder: ${e}`));
+});
 document.getElementById("btn-copy-log").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(lastErrorText);
@@ -568,7 +589,10 @@ listen("game-exited", (event) => {
   appWindow.unminimize();
   appWindow.setFocus();
   if (code !== 0) {
-    showError(`Игра завершилась с кодом ${code}. Подробности — в launcher.log.`);
+    showError(
+      `Игра завершилась с ошибкой (код ${code}). Нажмите «Открыть логи» — ` +
+        `нужен файл game.log, в нём причина.`
+    );
   } else {
     showIdle();
   }

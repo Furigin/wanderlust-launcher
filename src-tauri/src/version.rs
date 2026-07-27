@@ -111,8 +111,15 @@ pub fn load_merged_version(game_dir: &Path, neoforge_id: &str) -> Result<MergedV
     let child_args = child.arguments.unwrap_or(RawArguments { game: vec![], jvm: vec![] });
     let parent_args = parent.arguments.unwrap_or(RawArguments { game: vec![], jvm: vec![] });
 
+    // Ваниль и NeoForge объявляют часть библиотек совместно (gson, guava,
+    // commons-*). Если оставить оба вхождения, один и тот же jar попадёт в
+    // classpath дважды, и BootstrapLauncher падает ещё до старта игры:
+    // "IllegalStateException: Duplicate key ... gson-2.10.1.jar".
+    // Правило стандартное: версия ребёнка (NeoForge) перекрывает родительскую,
+    // позиция при этом сохраняется — порядок classpath значим.
     let mut libraries = parent.libraries;
     libraries.extend(child.libraries);
+    libraries = dedup_libraries(libraries);
 
     let mut game_args = parent_args.game;
     game_args.extend(child_args.game);
@@ -131,6 +138,37 @@ pub fn load_merged_version(game_dir: &Path, neoforge_id: &str) -> Result<MergedV
             .context("В родительской (ванильной) версии нет assetIndex")?,
         assets: parent.assets.context("В родительской версии нет поля assets")?,
     })
+}
+
+/// Ключ совпадения библиотек — "группа:артефакт" (+ классификатор, если он
+/// есть). Версия в ключ не входит: разные версии одного артефакта — это как
+/// раз тот случай, ради которого дедупликация и нужна.
+fn library_key(name: &str) -> String {
+    let parts: Vec<&str> = name.split(':').collect();
+    match parts.as_slice() {
+        [group, artifact, _version, classifier, ..] => format!("{group}:{artifact}:{classifier}"),
+        [group, artifact, ..] => format!("{group}:{artifact}"),
+        _ => name.to_string(),
+    }
+}
+
+/// Оставляет по одной библиотеке на ключ: побеждает последняя (NeoForge),
+/// но встаёт на позицию первой, чтобы не менять порядок classpath.
+fn dedup_libraries(libraries: Vec<RawLibrary>) -> Vec<RawLibrary> {
+    let mut position: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut result: Vec<RawLibrary> = Vec::with_capacity(libraries.len());
+
+    for lib in libraries {
+        let key = library_key(&lib.name);
+        match position.get(&key) {
+            Some(&index) => result[index] = lib,
+            None => {
+                position.insert(key, result.len());
+                result.push(lib);
+            }
+        }
+    }
+    result
 }
 
 fn read_version_json(game_dir: &Path, id: &str) -> Result<RawVersion> {
@@ -173,6 +211,43 @@ fn rule_matches(rule: &Rule) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lib(name: &str) -> RawLibrary {
+        RawLibrary { name: name.to_string(), downloads: None, rules: None }
+    }
+
+    #[test]
+    fn key_ignores_version_but_keeps_classifier() {
+        assert_eq!(library_key("com.google.code.gson:gson:2.10.1"), "com.google.code.gson:gson");
+        assert_eq!(library_key("org.lwjgl:lwjgl:3.3.3:natives-windows"), "org.lwjgl:lwjgl:natives-windows");
+    }
+
+    #[test]
+    fn child_version_wins_at_parent_position() {
+        // Порядок: ваниль объявляет gson 2.10.1, NeoForge — её же.
+        let merged = dedup_libraries(vec![
+            lib("com.google.code.gson:gson:2.10.1"),
+            lib("org.slf4j:slf4j-api:2.0.9"),
+            lib("com.google.code.gson:gson:2.11.0"),
+        ]);
+        let names: Vec<&str> = merged.iter().map(|l| l.name.as_str()).collect();
+        // Дубликата нет, победила версия ребёнка, позиция — исходная.
+        assert_eq!(names, vec!["com.google.code.gson:gson:2.11.0", "org.slf4j:slf4j-api:2.0.9"]);
+    }
+
+    #[test]
+    fn different_classifiers_are_kept_apart() {
+        let merged = dedup_libraries(vec![
+            lib("org.lwjgl:lwjgl:3.3.3"),
+            lib("org.lwjgl:lwjgl:3.3.3:natives-windows"),
+        ]);
+        assert_eq!(merged.len(), 2, "натив и основной jar — разные артефакты");
+    }
 }
 
 /// Разворачивает StringOrList в отдельные аргументы командной строки.

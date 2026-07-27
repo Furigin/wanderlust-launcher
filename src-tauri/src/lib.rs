@@ -140,6 +140,18 @@ async fn open_game_folder(app: tauri::AppHandle, version_id: String) -> Result<(
         .map_err(|e| format!("{e}"))
 }
 
+/// Открывает папку с логами лаунчера и игры — то, что нужно приложить
+/// к сообщению о проблеме.
+#[tauri::command]
+async fn open_logs_folder(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let paths = paths::AppPaths::global().map_err(|e| format!("{e:#}"))?;
+    paths.ensure_dirs().map_err(|e| format!("{e:#}"))?;
+    app.opener()
+        .open_path(paths.root.display().to_string(), None::<&str>)
+        .map_err(|e| format!("{e}"))
+}
+
 #[tauri::command]
 async fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
@@ -248,13 +260,26 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
+            // Лог пишем всегда, а не только в debug: сообщения об ошибках
+            // отправляют игрока «смотреть launcher.log», и файл обязан там
+            // быть. В debug дополнительно дублируем в консоль.
+            let mut builder = tauri_plugin_log::Builder::default().level(log::LevelFilter::Info);
+            if let Ok(paths) = paths::AppPaths::global() {
+                let _ = paths.ensure_dirs();
+                builder = builder.target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Folder {
+                        path: paths.root.clone(),
+                        file_name: Some("launcher".to_string()),
+                    },
+                ));
             }
+            if cfg!(debug_assertions) {
+                builder = builder.target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ));
+            }
+            app.handle().plugin(builder.build())?;
+            log::info!("Лаунчер {} запущен", env!("CARGO_PKG_VERSION"));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -265,6 +290,7 @@ pub fn run() {
             get_server_status,
             reinstall_version,
             open_game_folder,
+            open_logs_folder,
             open_url,
             check_for_update,
             launch,

@@ -21,6 +21,9 @@ pub struct AppPaths {
     pub tools_dir: PathBuf,
     pub launcher_json: PathBuf,
     pub log_file: PathBuf,
+    /// Вывод самой игры (stdout/stderr). Отдельно от launcher.log, чтобы
+    /// многословный лог Minecraft не топил в себе события лаунчера.
+    pub game_log: PathBuf,
 }
 
 impl AppPaths {
@@ -43,6 +46,7 @@ impl AppPaths {
             tools_dir: root.join("tools"),
             launcher_json: root.join("launcher.json"),
             log_file: root.join("launcher.log"),
+            game_log: root.join("game.log"),
             runtime_dir,
             root,
         })
@@ -58,6 +62,7 @@ impl AppPaths {
             tools_dir: root.join("tools"),
             launcher_json: root.join("launcher.json"),
             log_file: root.join("launcher.log"),
+            game_log: root.join("game.log"),
             runtime_dir,
             root,
         })

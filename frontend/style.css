@@ -96,30 +96,52 @@ body {
 
 /* ---------- Фон ---------- */
 
+/* Базовый фон — нейтральный тёмный, как на экране выбора сборки.
+   Фирменная картинка появляется только внутри конкретной версии (см. ниже),
+   чтобы главный экран не был окрашен под одну из сборок. */
 .app-bg {
   position: fixed;
   inset: 0;
   z-index: 0;
-  /* Картинка уже затемнена при сборке ассетов; градиенты сверху добавляют
-     глубину и гасят её к низу, где лежат кнопки и текст. */
+  background:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(124, 92, 255, 0.20), transparent 60%),
+    linear-gradient(160deg, #15141d 0%, #0a0a0f 55%, #0d0c14 100%);
+}
+
+/* Слой с картинкой сборки: лежит поверх базового фона и проявляется
+   плавно, когда игрок заходит в версию. */
+.app-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.55s ease;
   background:
     linear-gradient(180deg, rgba(10, 10, 15, 0.15) 0%, rgba(10, 10, 15, 0.72) 68%, rgba(8, 8, 12, 0.92) 100%),
     radial-gradient(ellipse 900px 500px at 50% -10%, rgba(255, 150, 60, 0.10), transparent 62%),
-    url("assets/bg.jpg") center / cover no-repeat,
-    linear-gradient(160deg, #191012 0%, #0a0a0f 55%, #0d0c14 100%);
+    var(--version-bg, none) center / cover no-repeat;
   animation: bg-drift 46s ease-in-out infinite alternate;
+}
+
+body.version-bg-on .app-bg::before {
+  opacity: 1;
+}
+
+/* Картинка задаётся на body, чтобы у каждой сборки могла быть своя. */
+body.bg-wanderlust-create {
+  --version-bg: url("assets/bg.jpg");
 }
 
 /* Едва заметное «дыхание» фона — картинка перестаёт выглядеть статичной
    обоиной, но не отвлекает от интерфейса. */
 @keyframes bg-drift {
   from {
-    background-size: auto, auto, 104% auto, auto;
-    background-position: center, center, 48% 50%, center;
+    background-size: auto, auto, 104% auto;
+    background-position: center, center, 48% 50%;
   }
   to {
-    background-size: auto, auto, 112% auto, auto;
-    background-position: center, center, 52% 46%, center;
+    background-size: auto, auto, 112% auto;
+    background-position: center, center, 52% 46%;
   }
 }
 

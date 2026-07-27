@@ -58,10 +58,11 @@ pub fn launch_game(
     // classpath на разных ОС; на Windows это всегда ';'.
     placeholders.insert("classpath_separator", ";".to_string());
 
-    let jvm_args: Vec<String> = expand_args(&version.jvm_args)
+    let mut jvm_args: Vec<String> = expand_args(&version.jvm_args)
         .iter()
         .map(|a| substitute(a, &placeholders))
         .collect();
+    patch_ignore_list(&mut jvm_args, &version.vanilla_id);
     let game_args: Vec<String> = expand_args(&version.game_args)
         .iter()
         .map(|a| substitute(a, &placeholders))
@@ -84,13 +85,71 @@ pub fn launch_game(
         .args(&jvm_args)
         .arg(&version.main_class)
         .args(&game_args)
-        .current_dir(&paths.game_dir);
+        .current_dir(&paths.game_dir)
+        // Перехватываем вывод игры: если она падает до инициализации своего
+        // логгера (нехватка памяти, битый мод, несовместимая Java), в
+        // logs/latest.log не остаётся ничего, и без этого причина краха
+        // теряется полностью.
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
 
-    let child = command
+    // Начинаем сессию с чистого файла: иначе лог рос бы бесконечно, а
+    // разбирать в нём нужно всегда последний запуск.
+    let _ = std::fs::write(&paths.game_log, b"");
+
+    let mut child = command
         .spawn()
         .context("Не удалось запустить процесс игры (java повреждена или classpath некорректен)")?;
+
+    pipe_to_log(child.stdout.take(), &paths.game_log, "out");
+    pipe_to_log(child.stderr.take(), &paths.game_log, "err");
+
     reporter.report("launch", "Игра запущена", 1, 1);
     Ok(child)
+}
+
+/// Сливает поток процесса в файл лога построчно, в отдельном потоке.
+/// Читать обязательно: если этого не делать, буфер трубы переполнится и
+/// игра намертво встанет на первой же попытке что-то напечатать.
+fn pipe_to_log<R: std::io::Read + Send + 'static>(
+    stream: Option<R>,
+    log_path: &Path,
+    tag: &'static str,
+) {
+    let Some(stream) = stream else { return };
+    let log_path = log_path.to_path_buf();
+    std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader, Write};
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .ok();
+        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            if let Some(f) = file.as_mut() {
+                let _ = writeln!(f, "[{tag}] {line}");
+            }
+        }
+    });
+}
+
+/// NeoForge передаёт `-DignoreList=client-extra,${version_name}.jar` — это
+/// файлы classpath, которые BootstrapLauncher не должен превращать в модули.
+/// `${version_name}` — это id запускаемой версии (neoforge-21.1.243), а
+/// ванильный client.jar лежит под именем родительской (1.21.1.jar) и в список
+/// не попадает. Java делает из него автоматический модуль `_1._21._1`, тот
+/// экспортирует те же пакеты, что и модуль `minecraft`, и запуск падает с
+/// ResolutionException ещё до появления окна. Дописываем его в список сами.
+fn patch_ignore_list(args: &mut [String], vanilla_id: &str) {
+    const PREFIX: &str = "-DignoreList=";
+    let entry = format!("{vanilla_id}.jar");
+    for arg in args.iter_mut() {
+        let Some(list) = arg.strip_prefix(PREFIX) else { continue };
+        if !list.split(',').any(|item| item.trim() == entry) {
+            *arg = format!("{PREFIX}{list},{entry}");
+        }
+        return;
+    }
 }
 
 fn substitute(template: &str, values: &HashMap<&str, String>) -> String {
@@ -99,4 +158,34 @@ fn substitute(template: &str, values: &HashMap<&str, String>) -> String {
         result = result.replace(&format!("${{{key}}}"), value);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::patch_ignore_list;
+
+    #[test]
+    fn appends_vanilla_jar_to_ignore_list() {
+        let mut args = vec![
+            "-p".to_string(),
+            "-DignoreList=client-extra,neoforge-21.1.243.jar".to_string(),
+        ];
+        patch_ignore_list(&mut args, "1.21.1");
+        assert_eq!(args[1], "-DignoreList=client-extra,neoforge-21.1.243.jar,1.21.1.jar");
+    }
+
+    #[test]
+    fn does_not_duplicate_existing_entry() {
+        let mut args = vec!["-DignoreList=client-extra,1.21.1.jar".to_string()];
+        patch_ignore_list(&mut args, "1.21.1");
+        assert_eq!(args[0], "-DignoreList=client-extra,1.21.1.jar");
+    }
+
+    #[test]
+    fn leaves_args_alone_when_no_ignore_list() {
+        let mut args = vec!["-Xmx4096M".to_string(), "-cp".to_string()];
+        let before = args.clone();
+        patch_ignore_list(&mut args, "1.21.1");
+        assert_eq!(args, before);
+    }
 }
