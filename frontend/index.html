@@ -47,14 +47,18 @@
         <span class="server-ping" id="server-ping"></span>
       </div>
 
-      <input
-        id="nick-input"
-        class="nick-input"
-        placeholder="Ник (латиница, цифры, _)"
-        maxlength="16"
-        autocomplete="off"
-        spellcheck="false"
-      />
+      <div class="nick-field" id="nick-field">
+        <label class="nick-label" for="nick-input">Введите ник:</label>
+        <input
+          id="nick-input"
+          class="nick-input"
+          placeholder="латиница, цифры и _"
+          maxlength="16"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div class="nick-hint">3–16 символов</div>
+      </div>
 
       <!-- Показывается вместо поля ника, пока идёт установка: первая
            загрузка занимает минуты, и пустое ожидание раздражает. -->

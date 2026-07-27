@@ -38,6 +38,7 @@ const el = {
   btnHome: document.getElementById("btn-home"),
   titlebarTitle: document.getElementById("titlebar-title"),
   nickInput: document.getElementById("nick-input"),
+  nickField: document.getElementById("nick-field"),
   actionRow: document.getElementById("action-row"),
   playBtn: document.getElementById("btn-play"),
   progressArea: document.getElementById("progress-area"),
@@ -516,7 +517,7 @@ function showIdle() {
   el.progressArea.classList.add("hidden");
   el.errorArea.classList.add("hidden");
   el.progressTip.classList.add("hidden");
-  el.nickInput.classList.remove("hidden");
+  el.nickField.classList.remove("hidden");
   stopTips();
   setBackAvailable(true);
 }
@@ -527,7 +528,7 @@ function showProgress() {
   el.errorArea.classList.add("hidden");
   // Ник во время установки менять уже поздно — на его месте показываем
   // подсказки, чтобы ожидание не было пустым.
-  el.nickInput.classList.add("hidden");
+  el.nickField.classList.add("hidden");
   el.progressTip.classList.remove("hidden");
   startTips();
   setBackAvailable(false);
@@ -541,7 +542,7 @@ function showError(message) {
   el.progressArea.classList.add("hidden");
   el.errorArea.classList.remove("hidden");
   el.progressTip.classList.add("hidden");
-  el.nickInput.classList.remove("hidden");
+  el.nickField.classList.remove("hidden");
   stopTips();
   el.errorText.textContent = message;
   setBackAvailable(true);
