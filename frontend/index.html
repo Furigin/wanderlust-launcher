@@ -25,6 +25,12 @@
       <div class="home-brand">WANDERLUST</div>
       <div class="home-hint">Выберите сборку</div>
       <div class="version-grid" id="version-grid"></div>
+
+      <!-- Лента новостей из манифеста. Если она пуста, блок скрыт целиком. -->
+      <div class="news-panel hidden" id="news-panel">
+        <div class="news-panel-title">Новости</div>
+        <div class="news-list" id="news-list"></div>
+      </div>
     </div>
   </section>
 
@@ -133,6 +139,17 @@
 
     <div class="settings-section-title">Дополнительные моды</div>
     <div class="optional-list" id="optional-list"></div>
+
+    <div class="settings-danger">
+      <div class="settings-danger-body">
+        <div class="settings-label">Переустановить сборку</div>
+        <div class="settings-hint">
+          Удалит моды и настройки сборки — при следующем запуске они скачаются заново.
+          Ваши миры и скриншоты останутся на месте.
+        </div>
+      </div>
+      <button class="danger-btn" id="btn-reinstall">Переустановить</button>
+    </div>
   </div>
 
   <script src="app.js"></script>

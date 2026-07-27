@@ -100,9 +100,27 @@ body {
   position: fixed;
   inset: 0;
   z-index: 0;
+  /* Картинка уже затемнена при сборке ассетов; градиенты сверху добавляют
+     глубину и гасят её к низу, где лежат кнопки и текст. */
   background:
-    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(124, 92, 255, 0.20), transparent 60%),
-    linear-gradient(160deg, #15141d 0%, #0a0a0f 55%, #0d0c14 100%);
+    linear-gradient(180deg, rgba(10, 10, 15, 0.15) 0%, rgba(10, 10, 15, 0.72) 68%, rgba(8, 8, 12, 0.92) 100%),
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(255, 150, 60, 0.10), transparent 62%),
+    url("assets/bg.jpg") center / cover no-repeat,
+    linear-gradient(160deg, #191012 0%, #0a0a0f 55%, #0d0c14 100%);
+  animation: bg-drift 46s ease-in-out infinite alternate;
+}
+
+/* Едва заметное «дыхание» фона — картинка перестаёт выглядеть статичной
+   обоиной, но не отвлекает от интерфейса. */
+@keyframes bg-drift {
+  from {
+    background-size: auto, auto, 104% auto, auto;
+    background-position: center, center, 48% 50%, center;
+  }
+  to {
+    background-size: auto, auto, 112% auto, auto;
+    background-position: center, center, 52% 46%, center;
+  }
 }
 
 .app-bg::after {
@@ -507,6 +525,173 @@ body {
   background: rgba(124, 92, 255, 0.12);
 }
 
+/* ---------- Блёстки от клика ---------- */
+
+.sparkle {
+  position: fixed;
+  z-index: 999;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: sparkle-fly 0.62s cubic-bezier(0.18, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes sparkle-fly {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.2);
+  }
+}
+
+/* ---------- Новости ---------- */
+
+.news-panel {
+  width: 100%;
+  max-width: 560px;
+  margin-top: 26px;
+}
+
+.news-panel-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
+
+.news-list {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+}
+
+.news-item {
+  flex: 0 0 232px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(16, 14, 20, 0.72);
+  backdrop-filter: blur(3px);
+  color: var(--text-0);
+  font: inherit;
+  cursor: default;
+  transition: border-color 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+}
+
+button.news-item {
+  cursor: pointer;
+}
+
+button.news-item:hover {
+  border-color: var(--accent);
+  background: rgba(124, 92, 255, 0.14);
+  transform: translateY(-2px);
+}
+
+.news-date {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.news-title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.news-text {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-1);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.news-more {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* ---------- Переустановка (опасное действие) ---------- */
+
+.settings-danger {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 20px 20px;
+  padding: 13px 15px;
+  border: 1px solid rgba(255, 92, 108, 0.35);
+  border-radius: 12px;
+  background: rgba(255, 92, 108, 0.06);
+}
+
+.settings-danger-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-danger .settings-hint {
+  margin-top: 3px;
+}
+
+.danger-btn {
+  flex-shrink: 0;
+  padding: 9px 15px;
+  border: 1px solid rgba(255, 92, 108, 0.55);
+  border-radius: 9px;
+  background: rgba(255, 92, 108, 0.12);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.danger-btn:hover:not(:disabled) {
+  background: rgba(255, 92, 108, 0.22);
+  color: #fff;
+}
+
+/* Второй шаг подтверждения — кнопка становится сплошной и пульсирует. */
+.danger-btn.armed {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  animation: danger-pulse 1s ease-in-out infinite;
+}
+
+@keyframes danger-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 92, 108, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 92, 108, 0);
+  }
+}
+
+.danger-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  animation: none;
+}
+
 /* ---------- Статус игрового сервера ---------- */
 
 .server-status {
@@ -864,6 +1049,21 @@ body {
 
 .theme-orange .version-card-media {
   background: radial-gradient(125% 125% at 22% 8%, #ff9147 0%, #e0501a 44%, #6f1d0a 100%);
+}
+
+/* Обложки конкретных сборок. Ключ — id версии из манифеста, поэтому
+   градиент из темы остаётся запасным вариантом, если картинки нет. */
+.version-card[data-id="wanderlust-create"] .version-card-media {
+  background: url("assets/card-create.jpg") center / cover no-repeat;
+}
+
+/* Лёгкий наезд картинки при наведении — карточка «оживает». */
+.version-card-media {
+  transition: transform 0.4s ease;
+}
+
+.version-card:hover:not(:disabled) .version-card-media {
+  transform: scale(1.06);
 }
 
 .theme-purple .version-card-media {

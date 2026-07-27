@@ -78,6 +78,52 @@ async fn get_server_status(host: String, port: u16) -> server_status::ServerStat
     server_status::ping(&host, port).await
 }
 
+/// Сносит установку сборки, чтобы следующий запуск поставил её заново.
+/// Удаляем строго по белому списку того, чем управляет лаунчер: всё
+/// остальное в папке — данные игрока (миры, скриншоты, настройки графики,
+/// шейдеры), и потерять их из-за кнопки «переустановить» недопустимо.
+#[tauri::command]
+async fn reinstall_version(version_id: String) -> Result<(), String> {
+    const LAUNCHER_OWNED_DIRS: [&str; 8] = [
+        "mods",
+        "config",
+        "kubejs",
+        "defaultconfigs",
+        "fancymenu_data",
+        "versions",
+        "libraries",
+        "assets",
+    ];
+    const LAUNCHER_OWNED_FILES: [&str; 2] = ["packwiz.json", "launcher_profiles.json"];
+
+    let manifest = manifest::load_manifest(MANIFEST_SOURCE).await.map_err(|e| format!("{e:#}"))?;
+    let ver = manifest
+        .version(&version_id)
+        .ok_or_else(|| format!("Версия '{version_id}' не найдена"))?;
+    let paths = paths::AppPaths::for_version(&ver.id, ver.java.major).map_err(|e| format!("{e:#}"))?;
+
+    if !paths.game_dir.is_dir() {
+        return Ok(()); // ещё ничего не установлено — переустанавливать нечего
+    }
+
+    for dir in LAUNCHER_OWNED_DIRS {
+        let path = paths.game_dir.join(dir);
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+                .map_err(|e| format!("Не удалось удалить {}: {e}", path.display()))?;
+        }
+    }
+    for file in LAUNCHER_OWNED_FILES {
+        let path = paths.game_dir.join(file);
+        if path.is_file() {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    log::info!("Установка сборки '{version_id}' сброшена, данные игрока сохранены");
+    Ok(())
+}
+
 /// Открывает папку установки выбранной версии в проводнике — чтобы игрок
 /// мог достать скриншоты, миры или логи, не зная про %APPDATA%.
 #[tauri::command]
@@ -217,6 +263,7 @@ pub fn run() {
             save_settings,
             get_optional_mods,
             get_server_status,
+            reinstall_version,
             open_game_folder,
             open_url,
             check_for_update,

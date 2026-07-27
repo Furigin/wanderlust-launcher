@@ -64,7 +64,147 @@ const el = {
   btnGameFolder: document.getElementById("btn-game-folder"),
   btnCopyIp: document.getElementById("btn-copy-ip"),
   copyIpLabel: document.getElementById("copy-ip-label"),
+  newsPanel: document.getElementById("news-panel"),
+  newsList: document.getElementById("news-list"),
+  btnReinstall: document.getElementById("btn-reinstall"),
 };
+
+// ---------- Звук и эффекты кликов ----------
+
+// Пул экземпляров: один <audio> не умеет играть сам поверх себя, и при
+// быстрых кликах звук бы просто обрывался на середине.
+const CLICK_POOL_SIZE = 4;
+let clickPool = [];
+let clickPoolIndex = 0;
+
+function initClickSound() {
+  for (let i = 0; i < CLICK_POOL_SIZE; i++) {
+    const a = new Audio("assets/click.wav");
+    a.preload = "auto";
+    a.volume = 0.35;
+    clickPool.push(a);
+  }
+}
+
+function playClick() {
+  if (state.settings && state.settings.sound_enabled === false) return;
+  const a = clickPool[clickPoolIndex];
+  clickPoolIndex = (clickPoolIndex + 1) % CLICK_POOL_SIZE;
+  if (!a) return;
+  try {
+    a.currentTime = 0;
+    a.play().catch(() => {}); // автоплей может быть заблокирован до первого жеста
+  } catch (_) {}
+}
+
+const SPARKLE_COLORS = ["#ffb46b", "#ff8a3d", "#ffd9a0", "#7c5cff", "#fff2dd"];
+
+/** Разлёт блёсток из точки клика. Чистый DOM: элементы живут ~700 мс. */
+function burstSparkles(x, y) {
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("span");
+    p.className = "sparkle";
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const distance = 26 + Math.random() * 34;
+    const size = 4 + Math.random() * 5;
+    p.style.left = `${x}px`;
+    p.style.top = `${y}px`;
+    p.style.width = `${size}px`;
+    p.style.height = `${size}px`;
+    p.style.background = SPARKLE_COLORS[(Math.random() * SPARKLE_COLORS.length) | 0];
+    p.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+    p.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
+    p.style.animationDelay = `${Math.random() * 60}ms`;
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 800);
+  }
+}
+
+// Один делегированный обработчик на всё окно: не нужно вешать звук на
+// каждую кнопку отдельно, включая те, что создаются динамически.
+document.addEventListener(
+  "click",
+  (e) => {
+    const target = e.target.closest("button, .version-card, .optional-item, .footer-link");
+    if (!target || target.disabled) return;
+    playClick();
+    burstSparkles(e.clientX, e.clientY);
+  },
+  true
+);
+
+// ---------- Новости ----------
+
+function renderNews(items) {
+  if (!items || items.length === 0) {
+    el.newsPanel.classList.add("hidden");
+    return;
+  }
+  el.newsPanel.classList.remove("hidden");
+  el.newsList.innerHTML = "";
+
+  for (const item of items) {
+    const card = document.createElement(item.url ? "button" : "div");
+    card.className = "news-item";
+    card.innerHTML = `
+      ${item.date ? `<div class="news-date">${escapeHtml(item.date)}</div>` : ""}
+      <div class="news-title">${escapeHtml(item.title || "")}</div>
+      ${item.text ? `<div class="news-text">${escapeHtml(item.text)}</div>` : ""}
+      ${item.url ? '<div class="news-more">Подробнее →</div>' : ""}
+    `;
+    if (item.url) {
+      card.addEventListener("click", () =>
+        invoke("open_url", { url: item.url }).catch((e) => flog("error", `open_url: ${e}`))
+      );
+    }
+    el.newsList.appendChild(card);
+  }
+}
+
+// ---------- Переустановка сборки ----------
+
+let reinstallArmed = false;
+let reinstallTimer = null;
+
+function initReinstall() {
+  el.btnReinstall.addEventListener("click", async () => {
+    if (!state.selected) return;
+
+    // Двухшаговое подтверждение вместо confirm(): в окне без рамки
+    // системный диалог выглядит чужеродно, а операция необратимая.
+    if (!reinstallArmed) {
+      reinstallArmed = true;
+      el.btnReinstall.textContent = "Точно? Нажмите ещё раз";
+      el.btnReinstall.classList.add("armed");
+      clearTimeout(reinstallTimer);
+      reinstallTimer = setTimeout(resetReinstallButton, 4000);
+      return;
+    }
+
+    clearTimeout(reinstallTimer);
+    el.btnReinstall.disabled = true;
+    el.btnReinstall.textContent = "Удаляем...";
+    try {
+      await invoke("reinstall_version", { versionId: state.selected.id });
+      el.btnReinstall.textContent = "Готово — нажмите «Играть»";
+    } catch (e) {
+      flog("error", `reinstall_version: ${e}`);
+      el.btnReinstall.textContent = "Ошибка";
+    } finally {
+      setTimeout(() => {
+        el.btnReinstall.disabled = false;
+        resetReinstallButton();
+      }, 2500);
+    }
+  });
+}
+
+function resetReinstallButton() {
+  reinstallArmed = false;
+  el.btnReinstall.textContent = "Переустановить";
+  el.btnReinstall.classList.remove("armed");
+}
 
 // ---------- Статус игрового сервера ----------
 
@@ -526,6 +666,8 @@ async function init() {
   el.nickInput.value = state.settings.nickname || "";
   validateNick();
   initRamControl();
+  initClickSound();
+  initReinstall();
 
   try {
     state.manifest = await invoke("get_manifest");
@@ -536,6 +678,7 @@ async function init() {
   }
 
   renderVersionGrid(state.manifest.versions || []);
+  renderNews(state.manifest.news_feed || []);
 
   flog("info", "frontend initialised");
 

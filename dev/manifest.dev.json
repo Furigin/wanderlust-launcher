@@ -13,7 +13,7 @@
       "subtitle": "Minecraft 1.21.1",
       "theme": "orange",
       "status": "ready",
-      "news": "Wanderlust Create — сборка вокруг Create на 1.21.1. Жми «Играть», лаунчер сам скачает и обновит все моды.",
+      "news": "Wanderlust Create — сборка с Create на 1.21.1.",
       "minecraft": { "version": "26.2" },
       "neoforge": { "version": "26.2.0.8-beta" },
       "java": {
@@ -23,7 +23,7 @@
           "sha256": "a183e7280220ad5f6fe94ecbf025a5f10fc5797a0b18c600ed8f813c8158c530"
         }
       },
-      "server": { "host": "play.example.com", "port": 25565 },
+      "server": { "host": "213.171.18.242", "port": 30530 },
       "pack": {
         "title": "Wanderlust Create",
         "packwiz_url": "http://127.0.0.1:8973/pack.toml"
@@ -32,10 +32,10 @@
     {
       "id": "stray-souls",
       "title": "Wanderlust Stray Souls",
-      "subtitle": "Minecraft 26.2 · самописы",
+      "subtitle": "Minecraft",
       "theme": "purple",
       "status": "soon",
-      "news": "Наша авторская сборка на 26.2. Скоро.",
+      "news": "Наша авторская сборка. Скоро.",
       "minecraft": { "version": "26.2" },
       "neoforge": { "version": "26.2.0.8-beta" },
       "java": {

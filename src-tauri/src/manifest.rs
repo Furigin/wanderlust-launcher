@@ -13,7 +13,23 @@ pub struct Manifest {
     pub launcher: LauncherInfo,
     #[serde(default)]
     pub links: LinksInfo,
+    /// Лента новостей проекта, общая для всех сборок. Пустая — блок новостей
+    /// на главном экране просто не показывается.
+    #[serde(default)]
+    pub news_feed: Vec<NewsItem>,
     pub versions: Vec<VersionInfo>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct NewsItem {
+    #[serde(default)]
+    pub date: String,
+    pub title: String,
+    #[serde(default)]
+    pub text: String,
+    /// Необязательная ссылка «подробнее» — открывается во внешнем браузере.
+    #[serde(default)]
+    pub url: String,
 }
 
 impl Manifest {
