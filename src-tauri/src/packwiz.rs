@@ -1,38 +1,80 @@
-// Обёртка над packwiz-installer-bootstrap. Флаги и позиционный аргумент
-// (URL/путь к pack.toml) подтверждены чтением реального исходника
-// packwiz-installer (Main.kt, addNonBootstrapOptions/addBootstrapOptions),
-// а весь конвейер синка проверен живым прогоном на тестовом pack.toml.
+// Обёртка над packwiz-installer. Флаги и позиционный аргумент (URL/путь к
+// pack.toml) подтверждены чтением реального исходника packwiz-installer
+// (Main.kt, addNonBootstrapOptions), а весь конвейер синка проверен живым
+// прогоном на боевом паке.
 //
 // Сам packwiz-installer решает, что скачать/обновить/удалить в mods/ —
 // лаунчер лишь передаёт ему URL и рабочую директорию, никакой логики
 // синхронизации здесь не дублируем (см. правило проекта "ничего не удалять
 // за пределами того, что лаунчер сам создал").
+//
+// ВАЖНО: bootstrap-обёртку (packwiz-installer-bootstrap) мы намеренно НЕ
+// используем. Она при каждом запуске ходит в api.github.com за информацией о
+// последнем релизе, и это оказалось источником массовых отказов у игроков:
+//   * у GitHub API лимит ~60 запросов в час на IP — игроки упирались в него
+//     и получали "403 for URL: https://api.github.com/.../releases/latest";
+//   * оборванная на середине докачка оставляла битый packwiz-installer.jar,
+//     после чего КАЖДЫЙ следующий запуск падал с ClassNotFoundException,
+//     даже когда сеть уже работала.
+// Поэтому версию installer'а мы пиним сами, качаем по прямой ссылке на
+// релизный файл (без API) и проверяем sha256. Jar запускается через -cp:
+// его Main-Class — заглушка RequiresBootstrap, а рабочая точка входа лежит
+// в классе link.infra.packwiz.installer.Main.
 use crate::downloader::{download_and_verify, HashAlgo};
 use crate::paths::AppPaths;
 use crate::progress::ProgressReporter;
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 
-const BOOTSTRAP_URL: &str = "https://github.com/packwiz/packwiz-installer-bootstrap/releases/download/v0.0.3/packwiz-installer-bootstrap.jar";
-const BOOTSTRAP_SHA256: &str = "a8fbb24dc604278e97f4688e82d3d91a318b98efc08d5dbfcbcbcab6443d116c";
+const INSTALLER_URL: &str =
+    "https://github.com/packwiz/packwiz-installer/releases/download/v0.5.14/packwiz-installer.jar";
+const INSTALLER_SHA256: &str = "c9f646908d340d84773948a9a7d98bc1dae250d35e1016dc6e2b8459760b5598";
+/// Точка входа внутри jar. Main-Class в манифесте — заглушка, требующая
+/// bootstrap, поэтому вызываем рабочий класс напрямую.
+const INSTALLER_MAIN_CLASS: &str = "link.infra.packwiz.installer.Main";
 
-async fn ensure_bootstrap_jar(paths: &AppPaths) -> Result<std::path::PathBuf> {
-    let jar_path = paths.tools_dir.join("packwiz-installer-bootstrap.jar");
+/// Отдаёт путь к проверенному packwiz-installer.jar, докачивая его при
+/// необходимости. Файл с несовпавшим размером/хешем удаляется и качается
+/// заново: именно «застрявший» битый jar ломал запуск у игроков навсегда.
+async fn ensure_installer_jar(paths: &AppPaths) -> Result<std::path::PathBuf> {
+    let jar_path = paths.tools_dir.join("packwiz-installer.jar");
+
     if jar_path.is_file() {
-        return Ok(jar_path);
+        match jar_is_valid(&jar_path) {
+            Ok(true) => return Ok(jar_path),
+            Ok(false) => {
+                log::warn!("packwiz-installer.jar повреждён — качаем заново");
+                let _ = std::fs::remove_file(&jar_path);
+            }
+            Err(e) => {
+                log::warn!("Не удалось проверить packwiz-installer.jar ({e:#}) — качаем заново");
+                let _ = std::fs::remove_file(&jar_path);
+            }
+        }
     }
+
     let client = reqwest::Client::new();
-    download_and_verify(&client, BOOTSTRAP_URL, HashAlgo::Sha256, BOOTSTRAP_SHA256, &jar_path)
+    download_and_verify(&client, INSTALLER_URL, HashAlgo::Sha256, INSTALLER_SHA256, &jar_path)
         .await
-        .context("Не удалось скачать packwiz-installer-bootstrap")?;
+        .context("Не удалось скачать packwiz-installer")?;
     Ok(jar_path)
 }
 
+/// Быстрая проверка целостности: jar — это zip, и в нём обязан быть класс
+/// точки входа. Оборванная закачка даёт битый zip и отсекается здесь.
+fn jar_is_valid(jar_path: &std::path::Path) -> Result<bool> {
+    let file = std::fs::File::open(jar_path).context("Не удалось открыть packwiz-installer.jar")?;
+    let mut zip = match zip::ZipArchive::new(file) {
+        Ok(z) => z,
+        Err(_) => return Ok(false), // не zip => обрыв закачки
+    };
+    // Результат кладём в переменную: иначе временный ZipFile переживёт
+    // архив и borrow checker справедливо ругается.
+    let has_main = zip.by_name("link/infra/packwiz/installer/Main.class").is_ok();
+    Ok(has_main)
+}
+
 /// Синхронизирует моды клиентской стороны из `packwiz_url` в `game_dir`.
-/// packwiz-installer-bootstrap сам держит packwiz-installer в актуальном
-/// состоянии (--bootstrap-no-update здесь НЕ передаём специально — это
-/// важно для игроков: обновления самого packwiz-installer должны идти
-/// автоматически, как для любого другого системного инструмента лаунчера).
 pub async fn sync_modpack(
     paths: &AppPaths,
     java_exe: &std::path::Path,
@@ -40,8 +82,7 @@ pub async fn sync_modpack(
     reporter: &ProgressReporter,
 ) -> Result<()> {
     reporter.report("sync", "Синхронизация модов", 0, 1);
-    let bootstrap_jar = ensure_bootstrap_jar(paths).await?;
-    let bootstrap_jar = bootstrap_jar.clone();
+    let installer_jar = ensure_installer_jar(paths).await?;
     let java_exe = java_exe.to_path_buf();
     let packwiz_url = packwiz_url.to_string();
     let game_dir = paths.game_dir.clone();
@@ -49,9 +90,9 @@ pub async fn sync_modpack(
 
     let reporter_for_task = reporter.clone();
     tokio::task::spawn_blocking(move || {
-        run_bootstrap(
+        run_installer(
             &java_exe,
-            &bootstrap_jar,
+            &installer_jar,
             &tools_dir,
             &game_dir,
             &packwiz_url,
@@ -65,9 +106,9 @@ pub async fn sync_modpack(
     Ok(())
 }
 
-fn run_bootstrap(
+fn run_installer(
     java_exe: &std::path::Path,
-    bootstrap_jar: &std::path::Path,
+    installer_jar: &std::path::Path,
     tools_dir: &std::path::Path,
     game_dir: &std::path::Path,
     packwiz_url: &str,
@@ -77,18 +118,20 @@ fn run_bootstrap(
     use std::os::windows::process::CommandExt;
     use std::process::Stdio;
 
-    // current_dir — tools_dir: именно туда bootstrap кэширует свою
-    // скачанную копию packwiz-installer.jar (проверено эмпирически — она
-    // появляется рядом с CWD процесса, а не рядом с самим bootstrap.jar).
-    // --pack-folder при этом отдельно указывает, куда класть сами моды.
+    // Запуск через -cp, а не -jar: Main-Class в манифесте — заглушка
+    // RequiresBootstrap, которая просто печатает «используйте bootstrap»
+    // и выходит. Рабочая точка входа — отдельный класс.
+    // --pack-folder указывает, куда класть моды; current_dir на tools_dir
+    // держит служебные файлы installer'а рядом с ним, а не в папке игры.
     //
     // Читаем stdout построчно, а не через .output(): скачивание сотен модов
     // занимает минуты, и без живого прогресса игрок видит замерший на нуле
     // индикатор и решает, что лаунчер завис. packwiz-installer печатает
     // строки вида "(45/491) Downloaded foo.jar" — из них и берём счётчик.
     let mut child = std::process::Command::new(java_exe)
-        .arg("-jar")
-        .arg(bootstrap_jar)
+        .arg("-cp")
+        .arg(installer_jar)
+        .arg(INSTALLER_MAIN_CLASS)
         .arg("--no-gui")
         .arg("--side")
         .arg("client")
