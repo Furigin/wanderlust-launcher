@@ -132,6 +132,14 @@ pub struct LinksInfo {
     pub discord: String,
     #[serde(default)]
     pub telegram: String,
+    /// Номер карты для перевода без комиссии. Пустая строка — блок реквизитов
+    /// в лаунчере не показывается. Поле обязано быть в структуре: манифест
+    /// отдаётся фронту через эту схему, и неизвестные поля JSON отбрасываются.
+    #[serde(default)]
+    pub card: String,
+    /// Подпись над номером карты (по умолчанию фронт подставит свою).
+    #[serde(default)]
+    pub card_note: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]

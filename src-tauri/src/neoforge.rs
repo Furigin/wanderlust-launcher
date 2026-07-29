@@ -13,6 +13,55 @@ use anyhow::{bail, Context, Result};
 
 const MAVEN_BASE: &str = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
 
+/// Забирает sha1 установщика, переживая обрывы связи. Раньше запрос был
+/// одиночным: единственный сбой (а DPI-фильтрация рвёт соединения выборочно
+/// и непредсказуемо) валил всю установку сообщением про «сервер вернул
+/// ошибку», хотя достаточно было повторить попытку.
+async fn fetch_sha1_with_retry(client: &reqwest::Client, sha1_url: &str) -> Result<String> {
+    const ATTEMPTS: u32 = 4;
+    let mut last_err = None;
+
+    for attempt in 1..=ATTEMPTS {
+        match try_fetch_sha1(client, sha1_url).await {
+            Ok(sha1) => return Ok(sha1),
+            Err(e) => {
+                log::warn!("Попытка {attempt}/{ATTEMPTS} получить sha1 NeoForge не удалась: {e:#}");
+                last_err = Some(e);
+                if attempt < ATTEMPTS {
+                    // 2с, 4с, 8с — даём DPI-фильтру «отпустить» соединение.
+                    let delay = 2u64.pow(attempt);
+                    tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap()).context(
+        "Не удалось получить контрольную сумму установщика NeoForge за несколько попыток. \
+         Похоже, maven.neoforged.net недоступен — проверьте интернет или включите VPN",
+    )
+}
+
+async fn try_fetch_sha1(client: &reqwest::Client, sha1_url: &str) -> Result<String> {
+    let text = client
+        .get(sha1_url)
+        .send()
+        .await
+        .context("Ошибка сети при обращении к maven.neoforged.net")?
+        .error_for_status()
+        .context("maven.neoforged.net вернул код ошибки")?
+        .text()
+        .await
+        .context("Не удалось прочитать тело ответа с sha1")?;
+
+    // Файл .sha1 содержит только хеш; пустой ответ означает обрыв на середине.
+    let sha1 = text.split_whitespace().next().unwrap_or("").to_string();
+    if sha1.len() != 40 {
+        anyhow::bail!("Получен некорректный sha1 (ожидали 40 символов, пришло {sha1:?})");
+    }
+    Ok(sha1)
+}
+
 /// Проверяет, установлен ли уже нужный NeoForge, и если нет — ставит его.
 pub async fn ensure_neoforge_installed(
     paths: &AppPaths,
@@ -37,23 +86,18 @@ pub async fn ensure_neoforge_installed(
 
     ensure_launcher_profile_stub(paths)?;
 
-    let client = reqwest::Client::new();
+    // Таймаут на запрос: у части провайдеров (особенно в РФ) maven.neoforged.net
+    // periodically режется DPI — соединение не отвергается, а «висит». Без
+    // таймаута установка замирала бы на этом шаге минутами.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .context("Не удалось создать HTTP-клиент")?;
     let installer_jar_name = format!("neoforge-{neoforge_version}-installer.jar");
     let installer_url = format!("{MAVEN_BASE}/{neoforge_version}/{installer_jar_name}");
     let sha1_url = format!("{installer_url}.sha1");
 
-    let expected_sha1 = client
-        .get(&sha1_url)
-        .send()
-        .await
-        .context("Не удалось получить контрольную сумму установщика NeoForge")?
-        .error_for_status()
-        .context("Сервер maven.neoforged.net вернул ошибку при запросе sha1")?
-        .text()
-        .await
-        .context("Не удалось прочитать sha1 установщика NeoForge")?
-        .trim()
-        .to_string();
+    let expected_sha1 = fetch_sha1_with_retry(&client, &sha1_url).await?;
 
     let installer_path = paths.tools_dir.join(&installer_jar_name);
     download_and_verify(
@@ -152,12 +196,14 @@ fn run_installer_once(
         .parent()
         .context("У пути к installer.jar нет родительской директории")?;
 
+    use std::os::windows::process::CommandExt;
     let output = std::process::Command::new(java_exe)
         .arg("-jar")
         .arg(installer_path)
         .arg("--install-client")
         .arg(game_dir)
         .current_dir(installer_dir)
+        .creation_flags(crate::CREATE_NO_WINDOW) // без мелькающего окна консоли при установке
         .output()
         .context("Не удалось запустить установщик NeoForge (скачанная Java повреждена?)")?;
 

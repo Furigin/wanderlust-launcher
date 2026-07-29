@@ -74,6 +74,7 @@ fn run_bootstrap(
     reporter: &ProgressReporter,
 ) -> Result<()> {
     use std::io::{BufRead, BufReader};
+    use std::os::windows::process::CommandExt;
     use std::process::Stdio;
 
     // current_dir — tools_dir: именно туда bootstrap кэширует свою
@@ -95,6 +96,7 @@ fn run_bootstrap(
         .arg(game_dir)
         .arg(packwiz_url)
         .current_dir(tools_dir)
+        .creation_flags(crate::CREATE_NO_WINDOW) // без мелькающего окна консоли при синке
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

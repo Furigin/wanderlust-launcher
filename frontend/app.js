@@ -48,6 +48,10 @@ const el = {
   errorText: document.getElementById("error-text"),
   newsText: document.getElementById("news-text"),
   footerLinks: document.getElementById("footer-links"),
+  donateCard: document.getElementById("donate-card"),
+  donateCardNote: document.getElementById("donate-card-note"),
+  donateCardNumber: document.getElementById("donate-card-number"),
+  btnCopyCard: document.getElementById("btn-copy-card"),
   settingsBtn: document.getElementById("btn-settings"),
   screenOptional: document.getElementById("screen-optional"),
   optionalList: document.getElementById("optional-list"),
@@ -396,20 +400,49 @@ const ICONS = {
 
 function renderFooterLinks(links) {
   el.footerLinks.innerHTML = "";
+  // Подписи рядом с иконками: раньше были голые иконки без текста, и по ним
+  // не читалось, куда ведёт кнопка.
   const entries = [
-    ["donate", links.donate],
-    ["discord", links.discord],
-    ["telegram", links.telegram],
+    ["discord", links.discord, "Discord"],
+    ["telegram", links.telegram, "Telegram"],
+    ["donate", links.donate, "Поддержать"],
   ];
-  for (const [key, url] of entries) {
+  for (const [key, url, label] of entries) {
     if (!url) continue;
     const a = document.createElement("button");
-    a.className = "footer-link";
-    a.title = key;
-    a.innerHTML = ICONS[key] || "";
+    a.className = `footer-link footer-link-${key}`;
+    a.title = label;
+    a.innerHTML = `${ICONS[key] || ""}<span>${label}</span>`;
     a.addEventListener("click", () => invoke("open_url", { url }).catch((e) => flog("error", `open_url: ${e}`)));
     el.footerLinks.appendChild(a);
   }
+
+  // Карта для перевода без комиссии — показывается, только если задана
+  // в манифесте, и меняется без пересборки лаунчера.
+  renderDonateCard(links.card, links.card_note);
+}
+
+/// Блок с номером карты и кнопкой «скопировать». Копирование удобнее ручного
+/// переписывания 16 цифр и исключает опечатку в реквизитах.
+function renderDonateCard(card, note) {
+  if (!card) {
+    el.donateCard.classList.add("hidden");
+    return;
+  }
+  el.donateCard.classList.remove("hidden");
+  el.donateCardNote.textContent = note || "Перевод на карту — без комиссии";
+  // Показываем группами по 4 цифры: так проще сверить глазами.
+  el.donateCardNumber.textContent = card.replace(/\s+/g, "").replace(/(.{4})/g, "$1 ").trim();
+
+  el.btnCopyCard.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(card.replace(/\s+/g, ""));
+      el.btnCopyCard.textContent = "Скопировано";
+      setTimeout(() => (el.btnCopyCard.textContent = "Копировать"), 1600);
+    } catch (e) {
+      flog("error", `clipboard card: ${e}`);
+    }
+  };
 }
 
 function escapeHtml(s) {
@@ -587,6 +620,9 @@ listen("progress", (event) => {
 listen("game-exited", (event) => {
   const code = event.payload;
   flog("info", `game-exited code=${code}`);
+  // Игра закрылась — возвращаем окно (на время игры оно было полностью
+  // спрятано, а не свёрнуто, чтобы не занимать место в панели задач).
+  appWindow.show();
   appWindow.unminimize();
   appWindow.setFocus();
   if (code !== 0) {
@@ -609,10 +645,11 @@ el.playBtn.addEventListener("click", async () => {
 
   try {
     await invoke("launch", { versionId: state.selected.id, nick: el.nickInput.value });
-    // Пайплайн установки завершился и игра реально запущена (spawn прошёл) —
-    // сворачиваем лаунчер, не закрываем. Возврат/ошибку игры отследит
-    // слушатель события game-exited выше.
-    await appWindow.minimize();
+    // Пайплайн установки завершился и игра реально запущена (spawn прошёл).
+    // Прячем окно целиком (hide, а не minimize): свёрнутый лаунчер занимал
+    // место в панели задач и мешал. Процесс при этом жив и ждёт выхода из
+    // игры — событие game-exited вернёт окно обратно.
+    await appWindow.hide();
   } catch (e) {
     flog("error", `launch failed: ${e}`);
     showError(String(e));

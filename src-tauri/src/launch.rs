@@ -8,6 +8,7 @@ use crate::progress::ProgressReporter;
 use crate::version::{expand_args, MergedVersion};
 use anyhow::{Context, Result};
 use std::collections::HashMap;
+use std::os::windows::process::CommandExt;
 use std::path::Path;
 
 const LAUNCHER_NAME: &str = "Wanderlust";
@@ -86,10 +87,13 @@ pub fn launch_game(
         .arg(&version.main_class)
         .args(&game_args)
         .current_dir(&paths.game_dir)
+        // Не создавать окно консоли для игрового java.exe — иначе оно висит
+        // в панели задач всю сессию рядом с окном самой игры (см. lib.rs).
+        .creation_flags(crate::CREATE_NO_WINDOW)
         // Перехватываем вывод игры: если она падает до инициализации своего
         // логгера (нехватка памяти, битый мод, несовместимая Java), в
         // logs/latest.log не остаётся ничего, и без этого причина краха
-        // теряется полностью.
+        // теряется полностью. Пайплайн pipe работает и с CREATE_NO_WINDOW.
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
