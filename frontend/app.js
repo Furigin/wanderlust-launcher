@@ -48,10 +48,6 @@ const el = {
   errorText: document.getElementById("error-text"),
   newsText: document.getElementById("news-text"),
   footerLinks: document.getElementById("footer-links"),
-  donateCard: document.getElementById("donate-card"),
-  donateCardNote: document.getElementById("donate-card-note"),
-  donateCardNumber: document.getElementById("donate-card-number"),
-  btnCopyCard: document.getElementById("btn-copy-card"),
   settingsBtn: document.getElementById("btn-settings"),
   screenOptional: document.getElementById("screen-optional"),
   optionalList: document.getElementById("optional-list"),
@@ -396,53 +392,54 @@ const ICONS = {
   donate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"></path></svg>',
   discord: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 5.4A18 18 0 0 0 15.6 4l-.3.6a13 13 0 0 1 3.9 1.6 15.6 15.6 0 0 0-13.9 0 13 13 0 0 1 3.9-1.6L8.9 4a18 18 0 0 0-4.7 1.4C1.8 9 1.1 12.5 1.4 16a18 18 0 0 0 5.4 2.7l.7-1.1a11 11 0 0 1-1.8-.9l.4-.3a13 13 0 0 0 11.6 0l.4.3a11 11 0 0 1-1.8.9l.7 1.1A18 18 0 0 0 22.1 16c.4-4-.6-7.5-1.8-10.6zM8.7 14c-.7 0-1.3-.7-1.3-1.5S8 11 8.7 11s1.3.7 1.3 1.5S9.4 14 8.7 14zm6.1 0c-.7 0-1.3-.7-1.3-1.5S14.1 11 14.8 11s1.3.7 1.3 1.5-.6 1.5-1.3 1.5z"></path></svg>',
   telegram: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4 20-7z"></path></svg>',
+  card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2.5"></rect><path d="M2 10h20"></path></svg>',
 };
 
+/// Футер — ряд одиночных иконок без подписей: ссылки не должны спорить за
+/// внимание с кнопкой «Играть». Что это за иконка, подсказывает всплывающий
+/// заголовок при наведении.
 function renderFooterLinks(links) {
   el.footerLinks.innerHTML = "";
-  // Подписи рядом с иконками: раньше были голые иконки без текста, и по ним
-  // не читалось, куда ведёт кнопка.
+
   const entries = [
     ["discord", links.discord, "Discord"],
     ["telegram", links.telegram, "Telegram"],
-    ["donate", links.donate, "Поддержать"],
+    ["donate", links.donate, "Поддержать проект"],
   ];
-  for (const [key, url, label] of entries) {
+  for (const [key, url, hint] of entries) {
     if (!url) continue;
-    const a = document.createElement("button");
-    a.className = `footer-link footer-link-${key}`;
-    a.title = label;
-    a.innerHTML = `${ICONS[key] || ""}<span>${label}</span>`;
-    a.addEventListener("click", () => invoke("open_url", { url }).catch((e) => flog("error", `open_url: ${e}`)));
-    el.footerLinks.appendChild(a);
+    const b = document.createElement("button");
+    b.className = `footer-link footer-link-${key}`;
+    b.title = hint;
+    b.innerHTML = ICONS[key] || "";
+    b.addEventListener("click", () => invoke("open_url", { url }).catch((e) => flog("error", `open_url: ${e}`)));
+    el.footerLinks.appendChild(b);
   }
 
-  // Карта для перевода без комиссии — показывается, только если задана
-  // в манифесте, и меняется без пересборки лаунчера.
-  renderDonateCard(links.card, links.card_note);
-}
-
-/// Блок с номером карты и кнопкой «скопировать». Копирование удобнее ручного
-/// переписывания 16 цифр и исключает опечатку в реквизитах.
-function renderDonateCard(card, note) {
-  if (!card) {
-    el.donateCard.classList.add("hidden");
-    return;
+  // Карта — такая же иконка в общем ряду. Клик копирует номер в буфер:
+  // отдельный блок с 16 цифрами занимал место и лез в глаза.
+  if (links.card) {
+    const digits = links.card.replace(/\s+/g, "");
+    const pretty = digits.replace(/(.{4})/g, "$1 ").trim();
+    const b = document.createElement("button");
+    b.className = "footer-link footer-link-card";
+    b.title = `${links.card_note || "Перевод на карту без комиссии"}: ${pretty}\nНажмите, чтобы скопировать`;
+    b.innerHTML = ICONS.card;
+    b.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(digits);
+        b.classList.add("copied");
+        b.title = `Скопировано: ${pretty}`;
+        setTimeout(() => {
+          b.classList.remove("copied");
+          b.title = `${links.card_note || "Перевод на карту без комиссии"}: ${pretty}\nНажмите, чтобы скопировать`;
+        }, 1600);
+      } catch (e) {
+        flog("error", `clipboard card: ${e}`);
+      }
+    });
+    el.footerLinks.appendChild(b);
   }
-  el.donateCard.classList.remove("hidden");
-  el.donateCardNote.textContent = note || "Перевод на карту — без комиссии";
-  // Показываем группами по 4 цифры: так проще сверить глазами.
-  el.donateCardNumber.textContent = card.replace(/\s+/g, "").replace(/(.{4})/g, "$1 ").trim();
-
-  el.btnCopyCard.onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(card.replace(/\s+/g, ""));
-      el.btnCopyCard.textContent = "Скопировано";
-      setTimeout(() => (el.btnCopyCard.textContent = "Копировать"), 1600);
-    } catch (e) {
-      flog("error", `clipboard card: ${e}`);
-    }
-  };
 }
 
 function escapeHtml(s) {
