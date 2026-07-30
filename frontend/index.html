@@ -19,6 +19,24 @@
 
   <div class="app-bg"></div>
 
+  <!-- Экран самообновления. Показывается поверх всего, пока качается новая
+       версия: без него окно выглядело зависшим и его закрывали на середине. -->
+  <div id="screen-update" class="update-screen hidden">
+    <div class="update-box">
+      <div class="update-spinner"></div>
+      <div class="update-title" id="update-title">Обновление лаунчера</div>
+      <div class="update-sub" id="update-sub">Скачиваем новую версию...</div>
+      <div class="update-bar">
+        <div class="update-bar-fill" id="update-fill"></div>
+      </div>
+      <div class="update-meta">
+        <span id="update-size"></span>
+        <span id="update-percent"></span>
+      </div>
+      <div class="update-hint">Не закрывайте окно — лаунчер перезапустится сам</div>
+    </div>
+  </div>
+
   <!-- Экран выбора версии/сборки -->
   <section id="screen-home" class="home-screen">
     <div class="home-inner">

@@ -48,6 +48,12 @@ const el = {
   errorText: document.getElementById("error-text"),
   newsText: document.getElementById("news-text"),
   footerLinks: document.getElementById("footer-links"),
+  screenUpdate: document.getElementById("screen-update"),
+  updateTitle: document.getElementById("update-title"),
+  updateSub: document.getElementById("update-sub"),
+  updateFill: document.getElementById("update-fill"),
+  updateSize: document.getElementById("update-size"),
+  updatePercent: document.getElementById("update-percent"),
   settingsBtn: document.getElementById("btn-settings"),
   screenOptional: document.getElementById("screen-optional"),
   optionalList: document.getElementById("optional-list"),
@@ -612,6 +618,42 @@ listen("progress", (event) => {
     el.progressPercent.textContent = "";
     el.progressLabel.textContent = label;
   }
+});
+
+// ---------- Самообновление лаунчера ----------
+
+listen("update-started", (event) => {
+  const version = event.payload || "";
+  flog("info", `самообновление до ${version}`);
+  el.screenUpdate.classList.remove("hidden");
+  el.updateTitle.textContent = "Обновление лаунчера";
+  el.updateSub.textContent = version ? `Загружаем версию ${version}...` : "Скачиваем новую версию...";
+});
+
+listen("update-progress", (event) => {
+  const [done, total] = event.payload || [0, 0];
+  if (total > 0) {
+    const pct = Math.min(100, Math.round((done / total) * 100));
+    el.updateFill.style.width = `${pct}%`;
+    el.updatePercent.textContent = `${pct}%`;
+    el.updateSize.textContent = `${formatBytes(done)} / ${formatBytes(total)}`;
+  } else {
+    // Сервер не отдал Content-Length — показываем хотя бы объём.
+    el.updateSize.textContent = formatBytes(done);
+  }
+});
+
+listen("update-ready", () => {
+  el.updateFill.style.width = "100%";
+  el.updatePercent.textContent = "100%";
+  el.updateTitle.textContent = "Готово";
+  el.updateSub.textContent = "Перезапускаем лаунчер...";
+});
+
+listen("update-failed", (event) => {
+  // Не блокируем игру: обновление не критично, можно играть на текущей версии.
+  flog("warn", `самообновление не удалось: ${event.payload}`);
+  el.screenUpdate.classList.add("hidden");
 });
 
 listen("game-exited", (event) => {

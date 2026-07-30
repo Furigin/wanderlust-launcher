@@ -169,7 +169,7 @@ async fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
 /// Ошибка самообновления не должна мешать игроку просто поиграть — в этом
 /// случае молча остаёмся на текущей версии и продолжаем как обычно.
 #[tauri::command]
-async fn check_for_update() -> Result<bool, String> {
+async fn check_for_update(app: tauri::AppHandle) -> Result<bool, String> {
     let manifest = manifest::load_manifest(MANIFEST_SOURCE)
         .await
         .map_err(|e| format!("{e:#}"))?;
@@ -178,10 +178,29 @@ async fn check_for_update() -> Result<bool, String> {
         return Ok(false);
     }
 
-    match update::download_and_apply(&manifest).await {
-        Ok(()) => std::process::exit(0),
+    // Показываем игроку экран обновления: загрузка ~14 МБ занимает время, и
+    // без видимого прогресса окно выглядело зависшим — люди закрывали его
+    // на середине и оставались на старой версии.
+    let version = manifest.launcher.version.clone();
+    log::info!("Доступна версия {version}, начинаем самообновление");
+    let _ = app.emit("update-started", &version);
+
+    let app_for_progress = app.clone();
+    let result = update::download_and_apply(&manifest, move |done, total| {
+        let _ = app_for_progress.emit("update-progress", (done, total));
+    })
+    .await;
+
+    match result {
+        Ok(()) => {
+            let _ = app.emit("update-ready", &version);
+            // Даём фронту мгновение отрисовать «Перезапуск...» перед выходом.
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            std::process::exit(0)
+        }
         Err(e) => {
             log::warn!("Самообновление не удалось, продолжаем на текущей версии: {e:#}");
+            let _ = app.emit("update-failed", format!("{e:#}"));
             Ok(false)
         }
     }
