@@ -68,6 +68,7 @@ const el = {
   serverDot: document.getElementById("server-dot"),
   serverText: document.getElementById("server-text"),
   serverPing: document.getElementById("server-ping"),
+  serverPlayersTip: document.getElementById("server-players-tip"),
   btnGameFolder: document.getElementById("btn-game-folder"),
   btnCopyIp: document.getElementById("btn-copy-ip"),
   copyIpLabel: document.getElementById("copy-ip-label"),
@@ -246,12 +247,40 @@ async function refreshServerStatus() {
       el.serverText.textContent = "Сервер недоступен";
       el.serverPing.textContent = "";
     }
+    buildPlayersTip(s);
   } catch (e) {
     flog("warn", `get_server_status: ${e}`);
     el.serverDot.classList.add("offline");
     el.serverText.textContent = "Сервер недоступен";
     el.serverPing.textContent = "";
+    buildPlayersTip({ online: false, players_online: 0, players_sample: [] });
   }
+}
+
+// Список ников, всплывающий при наведении на плашку статуса. Тултип
+// показывается только когда кто-то онлайн (класс has-players управляет
+// этим из CSS). Сервер отдаёт лишь выборку имён — если онлайна больше,
+// дописываем «и ещё N».
+function buildPlayersTip(s) {
+  const hasPlayers = s.online && s.players_online > 0;
+  el.serverStatus.classList.toggle("has-players", hasPlayers);
+  if (!hasPlayers) {
+    el.serverPlayersTip.innerHTML = "";
+    return;
+  }
+
+  const names = s.players_sample || [];
+  if (names.length === 0) {
+    // Онлайн есть, но сервер не прислал имён (частая настройка).
+    el.serverPlayersTip.innerHTML =
+      '<div class="tip-title">Сейчас играют</div><div class="tip-note">Сервер не показывает список ников</div>';
+    return;
+  }
+
+  const rows = names.map((n) => `<div class="tip-player">${escapeHtml(n)}</div>`).join("");
+  const more = s.players_online - names.length;
+  const moreRow = more > 0 ? `<div class="tip-note">и ещё ${more}</div>` : "";
+  el.serverPlayersTip.innerHTML = `<div class="tip-title">Сейчас играют</div>${rows}${moreRow}`;
 }
 
 function pluralPlayers(n) {

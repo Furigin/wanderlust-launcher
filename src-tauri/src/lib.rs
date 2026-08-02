@@ -254,12 +254,20 @@ async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: St
         packwiz::sync_modpack(&paths, &java_exe, &packwiz_url, &reporter).await?;
     }
 
+    // Автоподключение включаем только когда у версии задан адрес сервера.
+    let server_address = if ver.server.host.trim().is_empty() {
+        None
+    } else {
+        Some(format!("{}:{}", ver.server.host, ver.server.port))
+    };
+
     let mut child = launch::launch_game(
         &paths,
         &java_exe,
         &merged_version,
         &nick,
         settings.ram_mb,
+        server_address.as_deref(),
         &reporter,
     )?;
 

@@ -20,6 +20,9 @@ pub fn launch_game(
     version: &MergedVersion,
     nick: &str,
     ram_mb: u32,
+    // Адрес сервера "host:port" для автоподключения, либо None — тогда игра
+    // откроется на главном экране как обычно.
+    server_address: Option<&str>,
     reporter: &ProgressReporter,
 ) -> Result<std::process::Child> {
     reporter.report("launch", "Запуск игры", 0, 1);
@@ -64,10 +67,20 @@ pub fn launch_game(
         .map(|a| substitute(a, &placeholders))
         .collect();
     patch_ignore_list(&mut jvm_args, &version.vanilla_id);
-    let game_args: Vec<String> = expand_args(&version.game_args)
+    let mut game_args: Vec<String> = expand_args(&version.game_args)
         .iter()
         .map(|a| substitute(a, &placeholders))
         .collect();
+
+    // Автоподключение к серверу сборки: клиент сразу заходит на него, минуя
+    // главное меню (--quickPlayMultiplayer, Minecraft 1.20+). Аргумент
+    // добавляем сами, а не из version JSON: там он под feature-правилом,
+    // которое мы не включаем (см. version.rs::rule_matches). Если сервер
+    // недоступен, клиент покажет экран ошибки подключения — это ожидаемо.
+    if let Some(addr) = server_address {
+        game_args.push("--quickPlayMultiplayer".to_string());
+        game_args.push(addr.to_string());
+    }
 
     // Размер кучи в version JSON не задаётся вообще — без явного -Xmx игра
     // стартует с дефолтом JVM (обычно ¼ ОЗУ), чего сборке из сотни модов

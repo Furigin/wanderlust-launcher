@@ -26,14 +26,39 @@ pub struct ServerStatus {
     pub online: bool,
     pub players_online: u32,
     pub players_max: u32,
+    /// Ники части онлайна из `players.sample`. Сервер отдаёт лишь выборку
+    /// (обычно до 12 имён) и может не присылать её вовсе — тогда список пуст,
+    /// хотя `players_online` больше нуля. Это ограничение протокола, не бага.
+    pub players_sample: Vec<String>,
     /// Задержка до сервера в миллисекундах (время полного обмена).
     pub ping_ms: u64,
 }
 
 impl ServerStatus {
     fn offline() -> Self {
-        Self { online: false, players_online: 0, players_max: 0, ping_ms: 0 }
+        Self {
+            online: false,
+            players_online: 0,
+            players_max: 0,
+            players_sample: Vec::new(),
+            ping_ms: 0,
+        }
     }
+}
+
+/// Убирает legacy-коды форматирования (§ + следующий символ) из ника,
+/// иначе в списке появлялись бы артефакты вида «§aNick».
+fn strip_legacy_colors(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '§' {
+            chars.next(); // пропускаем код цвета/стиля
+        } else {
+            out.push(c);
+        }
+    }
+    out.trim().to_string()
 }
 
 /// Никогда не возвращает ошибку: недоступный сервер — это нормальное
@@ -104,10 +129,23 @@ async fn try_ping(host: &str, port: u16) -> Result<ServerStatus> {
         serde_json::from_slice(&buf[pos..end]).context("Статус сервера — не JSON")?;
 
     let players = json.get("players");
+    let players_sample = players
+        .and_then(|p| p.get("sample"))
+        .and_then(|s| s.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| e.get("name").and_then(|n| n.as_str()))
+                .map(strip_legacy_colors)
+                .filter(|n| !n.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
     Ok(ServerStatus {
         online: true,
         players_online: players.and_then(|p| p.get("online")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
         players_max: players.and_then(|p| p.get("max")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        players_sample,
         ping_ms: started.elapsed().as_millis() as u64,
     })
 }
