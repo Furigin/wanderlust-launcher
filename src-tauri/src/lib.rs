@@ -4,6 +4,7 @@
 // ниже (Этап 3).
 pub mod assets;
 pub mod auth;
+pub mod cheats;
 pub mod downloader;
 pub mod jre;
 pub mod launch;
@@ -224,6 +225,20 @@ async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: St
     // Своя game-папка и JRE у каждой версии — см. paths.rs.
     let paths = paths::AppPaths::for_version(&ver.id, ver.java.major)?;
     paths.ensure_dirs()?;
+
+    // Проверка идёт первым делом, до синка пака и до всех загрузок. Два
+    // повода именно здесь: packwiz-installer при синке подчищает папку и
+    // может унести улику до того, как мы её увидим, а игроку незачем ждать
+    // всю установку, чтобы узнать, что его не пустят. При первой установке
+    // папки ещё нет — скан просто вернёт пусто.
+    let found = cheats::scan(&paths.game_dir, &manifest.anticheat.blocklist);
+    if !found.is_empty() {
+        // Подробности — только в лог: игроку показываем обезличенный текст,
+        // иначе он поймёт, какой файл переименовать (см. cheats.rs).
+        let names: Vec<&str> = found.iter().map(|d| d.file.as_str()).collect();
+        log::warn!("Запуск заблокирован для {nick} ({}): {}", ver.id, names.join(", "));
+        anyhow::bail!("{}", cheats::block_message(&manifest.anticheat.contact));
+    }
 
     let app_for_events = app.clone();
     let reporter = progress::ProgressReporter::new(move |ev| {

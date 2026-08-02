@@ -6,6 +6,21 @@
     "discord": "https://discord.gg/example",
     "telegram": "https://t.me/example"
   },
+  "anticheat": {
+    "contact": "@MegoCat",
+    "blocklist": [
+      "xray",
+      "wurst",
+      "meteorclient",
+      "impactclient",
+      "liquidbounce",
+      "sigmaclient",
+      "aristois",
+      "rusherhack",
+      "wolfram",
+      "killaura"
+    ]
+  },
   "versions": [
     {
       "id": "wanderlust-create",

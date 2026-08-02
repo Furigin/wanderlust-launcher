@@ -17,7 +17,24 @@ pub struct Manifest {
     /// на главном экране просто не показывается.
     #[serde(default)]
     pub news_feed: Vec<NewsItem>,
+    /// Правила поиска запрещённых модов. Живут в манифесте, а не в коде,
+    /// чтобы пополнять список без выпуска новой версии лаунчера.
+    #[serde(default)]
+    pub anticheat: AntiCheatInfo,
     pub versions: Vec<VersionInfo>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct AntiCheatInfo {
+    /// Куда игроку писать, если его не пустили — подставляется в текст
+    /// блокировки. Пусто — лаунчер напишет обезличенное «напиши администратору».
+    #[serde(default)]
+    pub contact: String,
+    /// Подстроки для поиска в именах файлов. Регистр и разделители не важны:
+    /// "xray" ловит и "X-Ray_Ultimate.zip", и "x ray.jar" (см. cheats.rs).
+    /// Пустой список полностью выключает проверку.
+    #[serde(default)]
+    pub blocklist: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
