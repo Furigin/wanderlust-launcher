@@ -1384,3 +1384,27 @@ button.news-item:hover {
 .version-card.is-soon .version-card-sub {
   color: var(--text-1);
 }
+
+/* Предупреждение под ползунком памяти: появляется, только если игрок выкрутил
+   больше, чем физически есть. Красный, но не кричащий — это подсказка, а не
+   ошибка, запуск оно не блокирует. */
+.settings-warn {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 107, 107, 0.08);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #ff9b9b;
+}
+
+/* Наиграно часов — под виджетом онлайна, тем же центром. Намеренно тихое:
+   это приятная деталь, а не то, за чем игрок сюда пришёл. */
+.playtime {
+  align-self: center;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  letter-spacing: 0.2px;
+}

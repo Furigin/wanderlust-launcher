@@ -15,9 +15,11 @@ pub mod neoforge;
 pub mod packwiz;
 pub mod packwiz_meta;
 pub mod paths;
+pub mod playtime;
 pub mod progress;
 pub mod server_status;
 pub mod settings;
+pub mod system;
 pub mod update;
 pub mod version;
 
@@ -38,7 +40,7 @@ pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[cfg(debug_assertions)]
 pub const MANIFEST_SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../dev/manifest.dev.json");
 #[cfg(not(debug_assertions))]
-pub const MANIFEST_SOURCE: &str = "https://furigin.github.io/wanderlust_launcher/manifest.json";
+pub const MANIFEST_SOURCE: &str = "https://wanderlust-launcher.ruslanyik8.workers.dev/manifest.json";
 
 #[tauri::command]
 async fn get_manifest() -> Result<manifest::Manifest, String> {
@@ -80,6 +82,40 @@ fn frontend_log(level: String, message: String) {
 
 /// Онлайн сервера выбранной версии. Ошибок не возвращает: недоступный
 /// сервер — обычное дело, виджет просто покажет «оффлайн».
+/// Сколько в машине памяти, сколько разумно отдать игре и где потолок.
+/// Фронт по этим числам подставляет значение по умолчанию и предупреждает,
+/// если игрок выкрутил больше, чем физически есть.
+#[tauri::command]
+fn get_system_info() -> serde_json::Value {
+    match system::total_ram_mb() {
+        Some(total) => serde_json::json!({
+            "total_ram_mb": total,
+            "recommended_ram_mb": system::recommended_ram_mb(total),
+            "safe_max_ram_mb": system::safe_max_ram_mb(total),
+        }),
+        // Не смогли определить — фронт просто не покажет подсказки.
+        None => serde_json::json!({
+            "total_ram_mb": null,
+            "recommended_ram_mb": null,
+            "safe_max_ram_mb": null,
+        }),
+    }
+}
+
+/// Наигранное время: всего и по выбранной сборке, в секундах.
+#[tauri::command]
+fn get_playtime(version_id: String) -> serde_json::Value {
+    let Ok(paths) = paths::AppPaths::global() else {
+        return serde_json::json!({ "total_seconds": 0, "version_seconds": 0, "sessions": 0 });
+    };
+    let data = playtime::load(&paths);
+    serde_json::json!({
+        "total_seconds": data.total_seconds(),
+        "version_seconds": data.seconds_for(&version_id),
+        "sessions": data.sessions.len(),
+    })
+}
+
 #[tauri::command]
 async fn get_server_status(host: String, port: u16) -> server_status::ServerStatus {
     server_status::ping(&host, port).await
@@ -288,13 +324,31 @@ async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: St
 
     // Игровой процесс ждём в отдельном потоке — команда должна вернуться
     // сразу же, чтобы фронт мог свернуть окно, не блокируясь на всей сессии.
+    // Здесь же засекается время сессии: момент запуска и момент выхода.
     let app_for_exit = app.clone();
+    let started_at = playtime::now_unix();
+    let session_paths = paths.clone();
+    let session_version = ver.id.clone();
+    let session_nick = nick.clone();
     std::thread::spawn(move || {
         let code = child
             .wait()
             .ok()
             .and_then(|status| status.code())
             .unwrap_or(-1);
+
+        let seconds = playtime::now_unix().saturating_sub(started_at);
+        if let Err(e) = playtime::record_session(
+            &session_paths,
+            &session_version,
+            &session_nick,
+            started_at,
+            seconds,
+        ) {
+            // Статистика — не повод портить игроку выход из игры.
+            log::warn!("[playtime] не удалось записать сессию: {e:#}");
+        }
+
         let _ = app_for_exit.emit("game-exited", code);
     });
 
@@ -336,6 +390,8 @@ pub fn run() {
             save_settings,
             get_optional_mods,
             get_server_status,
+            get_system_info,
+            get_playtime,
             reinstall_version,
             open_game_folder,
             open_logs_folder,

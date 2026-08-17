@@ -67,6 +67,11 @@
         <div class="server-players-tip" id="server-players-tip"></div>
       </div>
 
+      <!-- Наиграно в этой сборке. Считает сам лаунчер по времени между
+           запуском и выходом из игры — серверная статистика знает только
+           время на сервере и только у тех, кто на него заходил. -->
+      <div class="playtime" id="playtime" hidden></div>
+
       <div class="nick-field" id="nick-field">
         <label class="nick-label" for="nick-input">Введите ник:</label>
         <input
@@ -159,9 +164,12 @@
         <span class="settings-value" id="ram-value">4096 МБ</span>
       </div>
       <input type="range" id="ram-slider" class="ram-slider" min="2048" max="16384" step="512" value="4096" />
-      <div class="settings-hint">
+      <div class="settings-hint" id="ram-hint">
         Не выделяйте больше половины памяти компьютера — остальное нужно системе.
       </div>
+      <!-- Предупреждение о слишком большом значении. Показывается, только
+           когда игрок реально выкрутил ползунок выше безопасного потолка. -->
+      <div class="settings-warn" id="ram-warn" hidden></div>
     </div>
 
     <div class="settings-section-title">Дополнительные моды</div>

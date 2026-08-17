@@ -27,7 +27,7 @@ use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 
 const INSTALLER_URL: &str =
-    "https://github.com/packwiz/packwiz-installer/releases/download/v0.5.14/packwiz-installer.jar";
+    "https://wanderlust-launcher.ruslanyik8.workers.dev/tools/packwiz-installer.jar";
 const INSTALLER_SHA256: &str = "c9f646908d340d84773948a9a7d98bc1dae250d35e1016dc6e2b8459760b5598";
 /// Точка входа внутри jar. Main-Class в манифесте — заглушка, требующая
 /// bootstrap, поэтому вызываем рабочий класс напрямую.

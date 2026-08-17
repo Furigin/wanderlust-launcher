@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.2.3"
+version = "0.2.6"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -45,3 +45,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 md5 = "0.7"
 uuid = "1"
 toml = "0.8"
+
+# Определение объёма ОЗУ через GlobalMemoryStatusEx (system.rs): лаунчер
+# подставляет разумный размер памяти для игры вместо фиксированных 4 ГБ.
+# Крейт и так есть в дереве транзитивно, объявляем явно ради прямого доступа.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation"] }

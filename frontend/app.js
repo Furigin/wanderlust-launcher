@@ -27,6 +27,8 @@ window.addEventListener("unhandledrejection", (e) => flog("error", `unhandledrej
 const state = {
   manifest: null,
   settings: null,
+  // Сведения о железе (ОЗУ) — для подсказок в настройках.
+  system: null,
   // Выбранная версия (объект из manifest.versions) или null на экране выбора.
   selected: null,
 };
@@ -59,6 +61,9 @@ const el = {
   optionalList: document.getElementById("optional-list"),
   ramSlider: document.getElementById("ram-slider"),
   ramValue: document.getElementById("ram-value"),
+  ramHint: document.getElementById("ram-hint"),
+  ramWarn: document.getElementById("ram-warn"),
+  playtime: document.getElementById("playtime"),
   progressBar: document.getElementById("progress-bar"),
   progressPercent: document.getElementById("progress-percent"),
   progressTip: document.getElementById("progress-tip"),
@@ -384,19 +389,87 @@ function formatRam(mb) {
   return mb >= 1024 && mb % 1024 === 0 ? `${mb / 1024} ГБ` : `${mb} МБ`;
 }
 
+/// Показывает подсказку под ползунком и, если надо, предупреждение.
+/// Выше безопасного потолка Java заберёт память, которой физически нет, и
+/// система уйдёт в своп: игра не падает, а просто дико тормозит — и виноватым
+/// в глазах игрока оказывается сервер.
+function updateRamHint(mb) {
+  const sys = state.system;
+  if (!sys || !sys.total_ram_mb) return;
+
+  el.ramHint.textContent =
+    `На этом компьютере ${formatRam(sys.total_ram_mb)} памяти, ` +
+    `рекомендуем ${formatRam(sys.recommended_ram_mb)}.`;
+
+  if (mb > sys.safe_max_ram_mb) {
+    el.ramWarn.textContent =
+      `Слишком много: системе не останется памяти, игра будет тормозить. ` +
+      `Максимум для этого компьютера — ${formatRam(sys.safe_max_ram_mb)}.`;
+    el.ramWarn.hidden = false;
+  } else {
+    el.ramWarn.hidden = true;
+  }
+}
+
 function initRamControl() {
-  const mb = state.settings.ram_mb || 4096;
+  const sys = state.system;
+
+  // Ползунок не должен предлагать заведомо невозможные значения.
+  if (sys && sys.total_ram_mb) {
+    el.ramSlider.max = Math.max(sys.safe_max_ram_mb, 2048);
+  }
+
+  // Если игрок ещё ничего не выбирал, ставим подобранное по железу, а не
+  // фиксированные 4 ГБ: на 8 ГБ это впритык, на 32 ГБ — необоснованно мало.
+  let mb = state.settings.ram_mb;
+  if (!mb && sys && sys.recommended_ram_mb) {
+    mb = sys.recommended_ram_mb;
+    state.settings.ram_mb = mb;
+    invoke("save_settings", { settings: state.settings }).catch(() => {});
+  }
+  mb = mb || 4096;
+
   el.ramSlider.value = mb;
   el.ramValue.textContent = formatRam(mb);
+  updateRamHint(mb);
 
   // input — только рисуем подпись (событий много), change — сохраняем один раз
   el.ramSlider.addEventListener("input", () => {
-    el.ramValue.textContent = formatRam(Number(el.ramSlider.value));
+    const v = Number(el.ramSlider.value);
+    el.ramValue.textContent = formatRam(v);
+    updateRamHint(v);
   });
   el.ramSlider.addEventListener("change", () => {
     state.settings.ram_mb = Number(el.ramSlider.value);
     invoke("save_settings", { settings: state.settings }).catch((e) => flog("error", `save_settings: ${e}`));
   });
+}
+
+/// «12 ч 30 мин» — часы отдельно, потому что «750 мин» читается плохо.
+function formatPlaytime(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h === 0) return `${m} мин`;
+  if (m === 0) return `${h} ч`;
+  return `${h} ч ${m} мин`;
+}
+
+/// Наиграно в выбранной сборке. Пока меньше минуты — не показываем вовсе,
+/// чтобы у нового игрока не висело «0 мин».
+async function refreshPlaytime(versionId) {
+  if (!el.playtime) return;
+  try {
+    const pt = await invoke("get_playtime", { versionId });
+    if (!pt || !pt.version_seconds) {
+      el.playtime.hidden = true;
+      return;
+    }
+    el.playtime.textContent = `Наиграно ${formatPlaytime(pt.version_seconds)}`;
+    el.playtime.hidden = false;
+  } catch (e) {
+    flog("warn", `get_playtime: ${e}`);
+    el.playtime.hidden = true;
+  }
 }
 
 // ---------- Титульная строка ----------
@@ -529,6 +602,7 @@ function renderVersionGrid(versions) {
 
 function selectVersion(v) {
   state.selected = v;
+  refreshPlaytime(v.id);
   el.titlebarTitle.textContent = v.title;
   el.btnHome.classList.remove("hidden");
 
@@ -688,6 +762,9 @@ listen("update-failed", (event) => {
 listen("game-exited", (event) => {
   const code = event.payload;
   flog("info", `game-exited code=${code}`);
+  // Сессия уже записана бэкендом — перечитываем, чтобы счётчик на экране
+  // сразу показал новое время, а не старое до перезапуска лаунчера.
+  if (state.selected) refreshPlaytime(state.selected.id);
   // Игра закрылась — возвращаем окно (на время игры оно было полностью
   // спрятано, а не свёрнуто, чтобы не занимать место в панели задач).
   appWindow.show();
@@ -795,6 +872,16 @@ async function init() {
 
   el.nickInput.value = state.settings.nickname || "";
   validateNick();
+
+  // Железо нужно до инициализации ползунка: от него зависят и значение по
+  // умолчанию, и верхняя граница.
+  try {
+    state.system = await invoke("get_system_info");
+  } catch (e) {
+    flog("warn", `get_system_info: ${e}`);
+    state.system = null;
+  }
+
   initRamControl();
   initClickSound();
   initReinstall();
