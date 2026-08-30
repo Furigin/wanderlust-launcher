@@ -173,7 +173,7 @@
     </div>
 
     <div class="settings-section-title">Дополнительные моды</div>
-    <div class="optional-list" id="optional-list"></div>
+    <div class="mod-grid" id="optional-list"></div>
 
     <div class="settings-danger">
       <div class="settings-danger-body">
@@ -187,6 +187,34 @@
     </div>
   </div>
 
+
+  <!-- Подробности о моде: открывается кликом по карточке. Отдельным слоем,
+       чтобы список под ним не терял позицию прокрутки. -->
+  <div id="mod-details" class="mod-details hidden">
+    <div class="mod-details-card">
+      <div class="mod-details-head">
+        <img id="mod-details-icon" class="mod-details-icon" alt="" />
+        <div class="mod-details-titles">
+          <div class="mod-details-name" id="mod-details-name"></div>
+          <div class="mod-details-sub" id="mod-details-sub"></div>
+        </div>
+        <button id="mod-details-close" class="icon-btn" title="Закрыть">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M18 6 6 18M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="mod-details-body" id="mod-details-body"></div>
+      <div class="mod-details-foot">
+        <label class="mod-details-toggle">
+          <input type="checkbox" id="mod-details-switch" />
+          <span id="mod-details-switch-label">Включить</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
+
 </body>
 </html>

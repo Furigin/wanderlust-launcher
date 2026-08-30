@@ -29,6 +29,9 @@ const state = {
   settings: null,
   // Сведения о железе (ОЗУ) — для подсказок в настройках.
   system: null,
+  // Полный список опциональных модов текущей сборки (включая скрытые
+  // библиотеки) — нужен, чтобы разрешать зависимости при переключении.
+  optionalMods: [],
   // Выбранная версия (объект из manifest.versions) или null на экране выбора.
   selected: null,
 };
@@ -59,6 +62,13 @@ const el = {
   settingsBtn: document.getElementById("btn-settings"),
   screenOptional: document.getElementById("screen-optional"),
   optionalList: document.getElementById("optional-list"),
+  modDetails: document.getElementById("mod-details"),
+  modDetailsIcon: document.getElementById("mod-details-icon"),
+  modDetailsName: document.getElementById("mod-details-name"),
+  modDetailsSub: document.getElementById("mod-details-sub"),
+  modDetailsBody: document.getElementById("mod-details-body"),
+  modDetailsSwitch: document.getElementById("mod-details-switch"),
+  modDetailsSwitchLabel: document.getElementById("mod-details-switch-label"),
   ramSlider: document.getElementById("ram-slider"),
   ramValue: document.getElementById("ram-value"),
   ramHint: document.getElementById("ram-hint"),
@@ -808,6 +818,15 @@ document.getElementById("btn-back-optional").addEventListener("click", () => {
   el.screenOptional.classList.add("hidden");
 });
 
+document.getElementById("mod-details-close").addEventListener("click", closeModDetails);
+// Клик по затемнению вокруг карточки тоже закрывает — привычное поведение.
+el.modDetails.addEventListener("click", (ev) => {
+  if (ev.target === el.modDetails) closeModDetails();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !el.modDetails.classList.contains("hidden")) closeModDetails();
+});
+
 async function openOptionalScreen() {
   if (!state.selected) return;
 
@@ -825,39 +844,164 @@ async function openOptionalScreen() {
 
 function renderOptionalMods(mods) {
   el.optionalList.innerHTML = "";
-  if (mods.length === 0) {
-    el.optionalList.innerHTML = '<div class="optional-empty">У этой сборки нет опциональных модов.</div>';
+  // Библиотеки-зависимости в списке не показываем: игроку они сами по себе
+  // не нужны, лаунчер включит их вместе с модом, которому они требуются.
+  const visible = mods.filter((m) => !m.hidden);
+  state.optionalMods = mods;
+
+  if (visible.length === 0) {
+    el.optionalList.innerHTML = '<div class="optional-empty">У этой сборки нет дополнительных модов.</div>';
     return;
   }
 
-  // Выбор опциональных модов хранится раздельно по версиям (см. settings.rs).
   const versionId = state.selected.id;
   if (!state.settings.optional_mods) state.settings.optional_mods = {};
-  const saved = state.settings.optional_mods[versionId] || {};
 
-  for (const mod of mods) {
-    const checked = Object.prototype.hasOwnProperty.call(saved, mod.id) ? saved[mod.id] : mod.default_value;
+  for (const mod of visible) {
+    const card = document.createElement("div");
+    card.className = "mod-card";
+    card.dataset.id = mod.id;
 
-    const item = document.createElement("label");
-    item.className = "optional-item";
-    const sizeText = mod.size_bytes ? `${(mod.size_bytes / 1024 / 1024).toFixed(1)} МБ` : "";
-    item.innerHTML = `
-      <input type="checkbox" ${checked ? "checked" : ""} />
-      <div class="optional-item-body">
-        <div class="optional-item-name">${escapeHtml(mod.name)}</div>
-        <div class="optional-item-desc">${escapeHtml(mod.description || "")}</div>
-        ${sizeText ? `<div class="optional-item-size">${sizeText}</div>` : ""}
+    const icon = mod.icon_url
+      ? `<img class="mod-card-icon" src="${escapeHtml(mod.icon_url)}" alt="" loading="lazy" />`
+      : `<div class="mod-card-icon mod-card-icon-empty">${escapeHtml((mod.name || "?").slice(0, 1))}</div>`;
+
+    const size = mod.size_bytes ? `${(mod.size_bytes / 1024 / 1024).toFixed(1)} МБ` : "";
+    // Подпись про зависимости — игрок должен понимать, что включится ещё один мод.
+    const reqNames = (mod.requires || [])
+      .map((id) => (mods.find((x) => x.id === id) || {}).name)
+      .filter(Boolean);
+    const reqNote = reqNames.length
+      ? `<div class="mod-card-req">+ ${escapeHtml(reqNames.join(", "))}</div>`
+      : "";
+
+    card.innerHTML = `
+      ${icon}
+      <div class="mod-card-body">
+        <div class="mod-card-name">${escapeHtml(mod.name)}</div>
+        <div class="mod-card-desc">${escapeHtml(mod.description || "")}</div>
+        ${reqNote}
+      </div>
+      <div class="mod-card-foot">
+        <span class="mod-card-size">${size}</span>
+        <label class="switch" title="Включить мод">
+          <input type="checkbox" />
+          <span class="switch-slider"></span>
+        </label>
       </div>
     `;
-    const checkbox = item.querySelector("input");
-    checkbox.addEventListener("change", () => {
-      if (!state.settings.optional_mods) state.settings.optional_mods = {};
-      if (!state.settings.optional_mods[versionId]) state.settings.optional_mods[versionId] = {};
-      state.settings.optional_mods[versionId][mod.id] = checkbox.checked;
-      invoke("save_settings", { settings: state.settings }).catch((e) => flog("error", `save_settings: ${e}`));
+
+    const box = card.querySelector("input");
+    box.checked = isModEnabled(mod, versionId);
+    syncCardState(card, box.checked);
+
+    // Клик по карточке открывает описание, но переключатель должен
+    // переключать, а не открывать окно.
+    card.addEventListener("click", (ev) => {
+      if (ev.target.closest("label.switch")) return;
+      openModDetails(mod);
     });
-    el.optionalList.appendChild(item);
+    box.addEventListener("change", () => {
+      setModEnabled(mod, box.checked);
+      syncCardState(card, box.checked);
+    });
+
+    el.optionalList.appendChild(card);
   }
+}
+
+/// Включён ли мод: сохранённый выбор игрока, иначе значение по умолчанию.
+function isModEnabled(mod, versionId) {
+  const saved = (state.settings.optional_mods || {})[versionId] || {};
+  return Object.prototype.hasOwnProperty.call(saved, mod.id) ? saved[mod.id] : mod.default_value;
+}
+
+function syncCardState(card, on) {
+  card.classList.toggle("mod-card-on", on);
+}
+
+/// Сохраняет выбор и тянет за собой зависимости.
+///
+/// Включаем мод — включаются все, кого он требует. Выключаем — выключаем и
+/// его библиотеки, но только если они больше никому из включённых не нужны:
+/// иначе, сняв Better Clouds, можно было бы случайно сломать другой мод,
+/// которому та же библиотека ещё нужна.
+function setModEnabled(mod, on) {
+  const versionId = state.selected.id;
+  const all = state.optionalMods || [];
+  if (!state.settings.optional_mods) state.settings.optional_mods = {};
+  if (!state.settings.optional_mods[versionId]) state.settings.optional_mods[versionId] = {};
+  const sel = state.settings.optional_mods[versionId];
+
+  sel[mod.id] = on;
+
+  const byId = (id) => all.find((x) => x.id === id);
+
+  if (on) {
+    for (const depId of mod.requires || []) {
+      if (byId(depId)) sel[depId] = true;
+    }
+  } else {
+    for (const depId of mod.requires || []) {
+      const dep = byId(depId);
+      if (!dep) continue;
+      const stillNeeded = (dep.needed_by || []).some((otherId) => {
+        if (otherId === mod.id) return false;
+        const other = byId(otherId);
+        return other && isModEnabled(other, versionId);
+      });
+      if (!stillNeeded) sel[depId] = false;
+    }
+  }
+
+  invoke("save_settings", { settings: state.settings }).catch((e) => flog("error", `save_settings: ${e}`));
+}
+
+// ---------- Окно с описанием мода ----------
+
+function openModDetails(mod) {
+  const versionId = state.selected.id;
+  el.modDetailsName.textContent = mod.name;
+
+  const reqNames = (mod.requires || [])
+    .map((id) => (state.optionalMods.find((x) => x.id === id) || {}).name)
+    .filter(Boolean);
+  const parts = [];
+  if (mod.size_bytes) parts.push(`${(mod.size_bytes / 1024 / 1024).toFixed(1)} МБ`);
+  if (reqNames.length) parts.push(`Требует: ${reqNames.join(", ")}`);
+  el.modDetailsSub.textContent = parts.join(" · ");
+
+  if (mod.icon_url) {
+    el.modDetailsIcon.src = mod.icon_url;
+    el.modDetailsIcon.classList.remove("hidden");
+  } else {
+    el.modDetailsIcon.classList.add("hidden");
+  }
+
+  // Показываем и русскую строку из пака, и полное описание от автора мода.
+  const full = [mod.description, mod.description_full].filter(Boolean).join("\n\n");
+  el.modDetailsBody.textContent = full || "Описание не указано.";
+
+  const box = el.modDetailsSwitch;
+  box.checked = isModEnabled(mod, versionId);
+  el.modDetailsSwitchLabel.textContent = box.checked ? "Включён" : "Включить";
+  box.onchange = () => {
+    setModEnabled(mod, box.checked);
+    el.modDetailsSwitchLabel.textContent = box.checked ? "Включён" : "Включить";
+    // Карточка в списке под окном должна показать то же состояние.
+    const card = el.optionalList.querySelector(`[data-id="${CSS.escape(mod.id)}"]`);
+    if (card) {
+      const cardBox = card.querySelector("input");
+      if (cardBox) cardBox.checked = box.checked;
+      syncCardState(card, box.checked);
+    }
+  };
+
+  el.modDetails.classList.remove("hidden");
+}
+
+function closeModDetails() {
+  el.modDetails.classList.add("hidden");
 }
 
 // ---------- Инициализация ----------
