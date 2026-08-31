@@ -170,8 +170,9 @@ async fn get_server_status(host: String, port: u16) -> server_status::ServerStat
 /// шейдеры), и потерять их из-за кнопки «переустановить» недопустимо.
 #[tauri::command]
 async fn reinstall_version(version_id: String) -> Result<(), String> {
-    const LAUNCHER_OWNED_DIRS: [&str; 8] = [
-        "mods",
+    // mods/ здесь нет намеренно: её чистим ниже поштучно, чтобы не унести
+    // моды, которые игрок положил туда сам.
+    const LAUNCHER_OWNED_DIRS: [&str; 7] = [
         "config",
         "kubejs",
         "defaultconfigs",
@@ -187,6 +188,41 @@ async fn reinstall_version(version_id: String) -> Result<(), String> {
 
     if !paths.game_dir.is_dir() {
         return Ok(()); // ещё ничего не установлено — переустанавливать нечего
+    }
+
+    // Из mods/ удаляем только то, что положил туда packwiz. Мод, докинутый
+    // игроком вручную, — его файл, и «переустановить» уносить его не должно.
+    //
+    // Если packwiz.json прочитать не удалось, отличить своё от чужого нечем,
+    // а именно ради таких поломок кнопка и существует — тогда чистим папку
+    // целиком, как раньше.
+    let tracked = packwiz::tracked_files(&paths.game_dir);
+    let mods_dir = paths.game_dir.join("mods");
+    if mods_dir.is_dir() {
+        if tracked.is_empty() {
+            log::warn!("packwiz.json не прочитан — чищу mods/ целиком");
+            std::fs::remove_dir_all(&mods_dir)
+                .map_err(|e| format!("Не удалось удалить {}: {e}", mods_dir.display()))?;
+        } else {
+            let mut kept = 0usize;
+            let entries = std::fs::read_dir(&mods_dir)
+                .map_err(|e| format!("Не удалось прочитать {}: {e}", mods_dir.display()))?;
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let rel = format!("mods/{}", entry.file_name().to_string_lossy()).to_lowercase();
+                if tracked.contains(&rel) {
+                    let _ = std::fs::remove_file(&path);
+                } else {
+                    kept += 1;
+                }
+            }
+            if kept > 0 {
+                log::info!("Переустановка: в mods/ оставлено {kept} файлов игрока");
+            }
+        }
     }
 
     for dir in LAUNCHER_OWNED_DIRS {

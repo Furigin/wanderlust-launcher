@@ -197,6 +197,32 @@ mod tests {
     use super::parse_progress_line;
 
     #[test]
+    fn tracked_files_are_normalized_and_missing_manifest_is_empty() {
+        use super::tracked_files;
+        let dir = std::env::temp_dir().join("wl-tracked-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Нет манифеста — «не знаем», а не «ничего не наше».
+        assert!(tracked_files(&dir).is_empty());
+
+        std::fs::write(
+            dir.join("packwiz.json"),
+            br#"{"cachedFiles":{"mods/a.pw.toml":{"cachedLocation":"mods\\Create-1.21.1.jar"},
+                                 "mods/b.pw.toml":{"cachedLocation":"./mods/jei.jar"},
+                                 "mods/c.pw.toml":{}}}"#,
+        )
+        .unwrap();
+
+        let t = tracked_files(&dir);
+        assert!(t.contains("mods/create-1.21.1.jar"), "обратные слэши и регистр");
+        assert!(t.contains("mods/jei.jar"), "ведущее ./");
+        assert_eq!(t.len(), 2, "запись без cachedLocation не считается");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn parses_packwiz_counter() {
         assert_eq!(parse_progress_line("(45/491) Downloaded foo.jar"), Some((45, 491)));
         assert_eq!(parse_progress_line("(1/1) Modpack files are already up to date!"), Some((1, 1)));
@@ -205,6 +231,37 @@ mod tests {
         assert_eq!(parse_progress_line("(abc/def) мусор"), None);
         assert_eq!(parse_progress_line(""), None);
     }
+}
+
+/// Пути (относительно папки игры), которые packwiz считает своими.
+///
+/// Нужно кнопке «переустановить»: сносить всю папку mods/ нельзя, иначе
+/// вместе с паком улетит мод, который игрок положил туда сам. Пустой ответ
+/// означает «не знаем» — вызывающий решает, что делать в этом случае.
+pub fn tracked_files(game_dir: &std::path::Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    let Ok(text) = std::fs::read_to_string(game_dir.join("packwiz.json")) else {
+        return out;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return out;
+    };
+    if let Some(files) = json.get("cachedFiles").and_then(|v| v.as_object()) {
+        for entry in files.values() {
+            if let Some(loc) = entry.get("cachedLocation").and_then(|v| v.as_str()) {
+                out.insert(normalize_rel(loc));
+            }
+        }
+    }
+    out
+}
+
+/// packwiz пишет пути и через слэш, и через обратный слэш, а Windows не
+/// различает регистр — приводим к одному виду, иначе сравнение промахнётся.
+fn normalize_rel(p: &str) -> String {
+    p.replace('\\', "/")
+        .trim_start_matches("./")
+        .to_lowercase()
 }
 
 /// CLI-режим packwiz-installer НЕ умеет спрашивать про опциональные моды —
