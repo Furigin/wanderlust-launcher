@@ -32,6 +32,9 @@ const state = {
   // Полный список опциональных модов текущей сборки (включая скрытые
   // библиотеки) — нужен, чтобы разрешать зависимости при переключении.
   optionalMods: [],
+  // Состояние экрана модов: строка поиска и фильтр («все» / «включённые»).
+  modsQuery: "",
+  modsFilter: "all",
   // Выбранная версия (объект из manifest.versions) или null на экране выбора.
   selected: null,
 };
@@ -62,6 +65,11 @@ const el = {
   settingsBtn: document.getElementById("btn-settings"),
   screenOptional: document.getElementById("screen-optional"),
   optionalList: document.getElementById("optional-list"),
+  screenMods: document.getElementById("screen-mods"),
+  btnMods: document.getElementById("btn-mods"),
+  modsBadge: document.getElementById("mods-badge"),
+  modsSearch: document.getElementById("mods-search-input"),
+  modsSummary: document.getElementById("mods-summary"),
   modDetails: document.getElementById("mod-details"),
   modDetailsIcon: document.getElementById("mod-details-icon"),
   modDetailsName: document.getElementById("mod-details-name"),
@@ -612,6 +620,14 @@ function renderVersionGrid(versions) {
 
 function selectVersion(v) {
   state.selected = v;
+  // Список модов кэшируется на сборку — при переходе в другую его надо
+  // сбросить, иначе покажутся моды предыдущей.
+  state.optionalMods = [];
+  state.modsQuery = "";
+  state.modsFilter = "all";
+  if (el.modsSearch) el.modsSearch.value = "";
+  if (el.modsBadge) el.modsBadge.classList.add("hidden");
+  preloadOptionalMods(v);
   refreshPlaytime(v.id);
   el.titlebarTitle.textContent = v.title;
   el.btnHome.classList.remove("hidden");
@@ -645,6 +661,8 @@ function applyVersionBackground(versionId) {
 
 function goHome() {
   state.selected = null;
+  el.screenMods.classList.add("hidden");
+  el.modDetails.classList.add("hidden");
   applyVersionBackground(null);
   stopServerPolling();
   el.screenOptional.classList.add("hidden");
@@ -814,6 +832,25 @@ el.playBtn.addEventListener("click", async () => {
 // ---------- Экран опциональных модов ----------
 
 document.getElementById("btn-settings").addEventListener("click", openOptionalScreen);
+document.getElementById("btn-mods").addEventListener("click", openModsScreen);
+document.getElementById("btn-back-mods").addEventListener("click", () => {
+  el.screenMods.classList.add("hidden");
+});
+
+el.modsSearch.addEventListener("input", () => {
+  state.modsQuery = el.modsSearch.value;
+  renderOptionalMods(state.optionalMods);
+});
+
+for (const btn of document.querySelectorAll(".mods-filter")) {
+  btn.addEventListener("click", () => {
+    state.modsFilter = btn.dataset.filter;
+    for (const b of document.querySelectorAll(".mods-filter")) {
+      b.classList.toggle("mods-filter-on", b === btn);
+    }
+    renderOptionalMods(state.optionalMods);
+  });
+}
 document.getElementById("btn-back-optional").addEventListener("click", () => {
   el.screenOptional.classList.add("hidden");
 });
@@ -827,30 +864,98 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && !el.modDetails.classList.contains("hidden")) closeModDetails();
 });
 
-async function openOptionalScreen() {
+function openOptionalScreen() {
+  if (!state.selected) return;
+  el.screenOptional.classList.remove("hidden");
+}
+
+/// Экран модов. Список грузится один раз на сборку и дальше живёт в state,
+/// чтобы повторный вход открывался мгновенно.
+async function openModsScreen() {
   if (!state.selected) return;
 
-  el.screenOptional.classList.remove("hidden");
-  el.optionalList.innerHTML = '<div class="optional-empty">Загрузка списка модов...</div>';
+  el.screenMods.classList.remove("hidden");
+  if (state.optionalMods.length === 0) {
+    el.optionalList.innerHTML = '<div class="mods-empty">Загружаем список модов…</div>';
+    try {
+      const mods = await invoke("get_optional_mods", { packwizUrl: state.selected.pack.packwiz_url });
+      state.optionalMods = mods;
+    } catch (e) {
+      flog("error", `get_optional_mods: ${e}`);
+      el.optionalList.innerHTML =
+        `<div class="mods-empty">Не удалось загрузить список.<br><span class="mods-empty-sub">${escapeHtml(String(e))}</span></div>`;
+      return;
+    }
+  }
+  renderOptionalMods(state.optionalMods);
+}
 
+/// Тихо подтягивает список модов при входе в сборку — только чтобы показать
+/// значок с числом выбранных на кнопке. Ошибки игнорируем: если не вышло,
+/// список всё равно загрузится при открытии экрана.
+async function preloadOptionalMods(version) {
+  if (!version.pack || !version.pack.packwiz_url) return;
   try {
-    const mods = await invoke("get_optional_mods", { packwizUrl: state.selected.pack.packwiz_url });
-    renderOptionalMods(mods);
-  } catch (e) {
-    flog("error", `get_optional_mods: ${e}`);
-    el.optionalList.innerHTML = `<div class="optional-empty">Не удалось загрузить список: ${escapeHtml(String(e))}</div>`;
+    const mods = await invoke("get_optional_mods", { packwizUrl: version.pack.packwiz_url });
+    if (state.selected && state.selected.id === version.id) {
+      state.optionalMods = mods;
+      updateModsSummary();
+    }
+  } catch (_) {}
+}
+
+/// Сколько модов выбрано и сколько они весят — показываем и в шапке экрана,
+/// и значком на кнопке «Моды», чтобы выбор был виден не заходя внутрь.
+function updateModsSummary() {
+  const versionId = state.selected && state.selected.id;
+  if (!versionId) return;
+  const all = state.optionalMods || [];
+  const chosen = all.filter((m) => !m.hidden && isModEnabled(m, versionId));
+
+  // Размер считаем со скрытыми библиотеками: скачается-то и они.
+  const withDeps = all.filter((m) => isModEnabled(m, versionId));
+  const bytes = withDeps.reduce((sum, m) => sum + (m.size_bytes || 0), 0);
+
+  if (el.modsBadge) {
+    el.modsBadge.textContent = String(chosen.length);
+    el.modsBadge.classList.toggle("hidden", chosen.length === 0);
+  }
+  if (el.modsSummary) {
+    const visible = all.filter((m) => !m.hidden).length;
+    el.modsSummary.textContent = chosen.length
+      ? `Выбрано ${chosen.length} из ${visible} · ${(bytes / 1024 / 1024).toFixed(1)} МБ`
+      : `Ничего не выбрано · доступно ${visible}`;
   }
 }
 
 function renderOptionalMods(mods) {
   el.optionalList.innerHTML = "";
+  state.optionalMods = mods;
+  const versionIdForFilter = state.selected.id;
+
   // Библиотеки-зависимости в списке не показываем: игроку они сами по себе
   // не нужны, лаунчер включит их вместе с модом, которому они требуются.
-  const visible = mods.filter((m) => !m.hidden);
-  state.optionalMods = mods;
+  let visible = mods.filter((m) => !m.hidden);
 
+  const q = (state.modsQuery || "").trim().toLowerCase();
+  if (q) {
+    visible = visible.filter((m) =>
+      `${m.name} ${m.description} ${m.description_full}`.toLowerCase().includes(q)
+    );
+  }
+  if (state.modsFilter === "on") {
+    visible = visible.filter((m) => isModEnabled(m, versionIdForFilter));
+  }
+
+  updateModsSummary();
+
+  if (mods.filter((m) => !m.hidden).length === 0) {
+    el.optionalList.innerHTML = '<div class="mods-empty">У этой сборки нет дополнительных модов.</div>';
+    return;
+  }
   if (visible.length === 0) {
-    el.optionalList.innerHTML = '<div class="optional-empty">У этой сборки нет дополнительных модов.</div>';
+    el.optionalList.innerHTML =
+      '<div class="mods-empty">Ничего не найдено.<div class="mods-empty-sub">Измените запрос или фильтр.</div></div>';
     return;
   }
 
@@ -904,6 +1009,9 @@ function renderOptionalMods(mods) {
     box.addEventListener("change", () => {
       setModEnabled(mod, box.checked);
       syncCardState(card, box.checked);
+      updateModsSummary();
+      // В режиме «Включённые» выключенный мод должен сразу исчезнуть из списка.
+      if (state.modsFilter === "on" && !box.checked) renderOptionalMods(state.optionalMods);
     });
 
     el.optionalList.appendChild(card);
@@ -995,6 +1103,7 @@ function openModDetails(mod) {
       if (cardBox) cardBox.checked = box.checked;
       syncCardState(card, box.checked);
     }
+    updateModsSummary();
   };
 
   el.modDetails.classList.remove("hidden");
