@@ -1870,3 +1870,57 @@ button.news-item:hover {
   font-size: 15px;
   padding: 12px;
 }
+
+/* ---------- Прокрутка экранов-оверлеев ---------- */
+
+/* Экран настроек прокручивается целиком: содержимого немного, и терять
+   место под закреплённую шапку незачем. */
+.overlay-screen {
+  overflow-y: auto;
+}
+
+/* А на экране модов прокручивается только список: поиск, фильтры и счётчик
+   должны оставаться на виду — иначе, пролистав вниз, теряешь управление. */
+#screen-mods {
+  overflow: hidden;
+}
+
+#screen-mods .overlay-header,
+#screen-mods .mods-toolbar,
+#screen-mods .mods-summary {
+  flex-shrink: 0;
+}
+
+#screen-mods .mod-grid {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0; /* без этого flex-элемент не даёт себя сжать и прокрутки нет */
+}
+
+/* Полоса прокрутки в тон интерфейсу, а не системная белая. */
+.overlay-screen ::-webkit-scrollbar,
+.overlay-screen::-webkit-scrollbar,
+.mod-details-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.overlay-screen ::-webkit-scrollbar-track,
+.overlay-screen::-webkit-scrollbar-track,
+.mod-details-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overlay-screen ::-webkit-scrollbar-thumb,
+.overlay-screen::-webkit-scrollbar-thumb,
+.mod-details-body::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.overlay-screen ::-webkit-scrollbar-thumb:hover,
+.overlay-screen::-webkit-scrollbar-thumb:hover,
+.mod-details-body::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
