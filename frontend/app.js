@@ -98,6 +98,11 @@ const el = {
   newsPanel: document.getElementById("news-panel"),
   newsList: document.getElementById("news-list"),
   btnReinstall: document.getElementById("btn-reinstall"),
+  btnCode: document.getElementById("btn-code"),
+  codeModal: document.getElementById("code-modal"),
+  codeInput: document.getElementById("code-input"),
+  codeStatus: document.getElementById("code-status"),
+  codeSubmit: document.getElementById("code-submit"),
 };
 
 // ---------- Звук и эффекты кликов ----------
@@ -832,6 +837,11 @@ el.playBtn.addEventListener("click", async () => {
 // ---------- Экран опциональных модов ----------
 
 document.getElementById("btn-settings").addEventListener("click", openOptionalScreen);
+el.btnCode.addEventListener("click", openCodeModal);
+document.getElementById("code-close").addEventListener("click", closeCodeModal);
+el.codeSubmit.addEventListener("click", submitCode);
+el.codeInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") submitCode(); });
+el.codeModal.addEventListener("click", (ev) => { if (ev.target === el.codeModal) closeCodeModal(); });
 document.getElementById("btn-mods").addEventListener("click", openModsScreen);
 document.getElementById("btn-back-mods").addEventListener("click", () => {
   el.screenMods.classList.add("hidden");
@@ -1113,6 +1123,73 @@ function closeModDetails() {
   el.modDetails.classList.add("hidden");
 }
 
+
+// ---------- Закрытые сборки ----------
+
+/// Проверяет код и, если он подошёл, дописывает закрытые сборки к списку.
+///
+/// Публичный манифест о них не знает вообще — они лежат по адресу, который
+/// считается из кода (см. private_access.rs). Поэтому «открыть» их можно
+/// только зная код: подобрать адрес нельзя.
+async function applyPrivateCode(code, { silent = false } = {}) {
+  if (!code || !code.trim()) return false;
+  try {
+    const versions = await invoke("unlock_private", { code });
+    if (!versions || versions.length === 0) {
+      if (!silent) setCodeStatus("Код не подошёл", true);
+      return false;
+    }
+
+    // Дописываем к уже показанным, не задваивая.
+    const known = new Set((state.manifest.versions || []).map((v) => v.id));
+    const added = versions.filter((v) => !known.has(v.id));
+    state.manifest.versions = [...(state.manifest.versions || []), ...added];
+    renderVersionGrid(state.manifest.versions);
+
+    // Код запоминаем: иначе при каждом запуске пришлось бы вводить заново,
+    // а он нужен ещё и при запуске самой сборки (её нет в публичном манифесте).
+    if (state.settings.private_code !== code) {
+      state.settings.private_code = code;
+      invoke("save_settings", { settings: state.settings }).catch(() => {});
+    }
+    return true;
+  } catch (e) {
+    // Сетевая ошибка — это не «неверный код», и говорить надо разное.
+    flog("warn", `unlock_private: ${e}`);
+    if (!silent) setCodeStatus("Нет связи с сервером, попробуйте позже", true);
+    return false;
+  }
+}
+
+function setCodeStatus(text, isError) {
+  el.codeStatus.textContent = text;
+  el.codeStatus.classList.toggle("code-status-error", !!isError);
+}
+
+function openCodeModal() {
+  el.codeInput.value = "";
+  setCodeStatus("", false);
+  el.codeModal.classList.remove("hidden");
+  setTimeout(() => el.codeInput.focus(), 50);
+}
+
+function closeCodeModal() {
+  el.codeModal.classList.add("hidden");
+}
+
+async function submitCode() {
+  const code = el.codeInput.value.trim();
+  if (!code) return;
+  setCodeStatus("Проверяем…", false);
+  el.codeSubmit.disabled = true;
+  const ok = await applyPrivateCode(code);
+  el.codeSubmit.disabled = false;
+  if (ok) {
+    setCodeStatus("Готово", false);
+    setTimeout(closeCodeModal, 500);
+  }
+}
+
 // ---------- Инициализация ----------
 
 async function init() {
@@ -1149,6 +1226,11 @@ async function init() {
 
   renderVersionGrid(state.manifest.versions || []);
   renderNews(state.manifest.news_feed || []);
+
+  // Код уже вводили — открываем закрытые сборки молча, без окна.
+  if (state.settings.private_code) {
+    applyPrivateCode(state.settings.private_code, { silent: true });
+  }
 
   flog("info", "frontend initialised");
 

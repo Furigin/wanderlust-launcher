@@ -16,6 +16,7 @@ pub mod packwiz;
 pub mod packwiz_meta;
 pub mod paths;
 pub mod playtime;
+pub mod private_access;
 pub mod progress;
 pub mod server_status;
 pub mod settings;
@@ -23,7 +24,6 @@ pub mod system;
 pub mod update;
 pub mod version;
 
-use anyhow::Context as _;
 use tauri::Emitter;
 
 /// Windows CREATE_NO_WINDOW. java.exe — консольное приложение, и без этого
@@ -80,8 +80,6 @@ fn frontend_log(level: String, message: String) {
     }
 }
 
-/// Онлайн сервера выбранной версии. Ошибок не возвращает: недоступный
-/// сервер — обычное дело, виджет просто покажет «оффлайн».
 /// Сколько в машине памяти, сколько разумно отдать игре и где потолок.
 /// Фронт по этим числам подставляет значение по умолчанию и предупреждает,
 /// если игрок выкрутил больше, чем физически есть.
@@ -116,6 +114,51 @@ fn get_playtime(version_id: String) -> serde_json::Value {
     })
 }
 
+/// Проверяет код доступа и отдаёт сборки закрытого манифеста.
+/// Пустой список — код не подошёл. Ошибка — проблемы с сетью.
+#[tauri::command]
+async fn unlock_private(code: String) -> Result<Vec<manifest::VersionInfo>, String> {
+    match private_access::fetch_private_manifest(MANIFEST_SOURCE, &code).await {
+        Ok(Some(m)) => {
+            log::info!("[private] код принят, сборок: {}", m.versions.len());
+            Ok(m.versions)
+        }
+        Ok(None) => {
+            // Намеренно не пишем в лог сам код: лог игрок может кому-то отправить.
+            log::info!("[private] код не подошёл");
+            Ok(Vec::new())
+        }
+        Err(e) => Err(format!("{e:#}")),
+    }
+}
+
+/// Находит версию по id: сначала в публичном манифесте, затем — в закрытом,
+/// если игрок вводил код доступа.
+///
+/// Без этого запуск и переустановка закрытой сборки не работали бы: её нет
+/// в публичном манифесте, и `manifest.version(id)` возвращал бы None.
+async fn resolve_version(version_id: &str) -> anyhow::Result<manifest::VersionInfo> {
+    let public = manifest::load_manifest(MANIFEST_SOURCE).await?;
+    if let Some(v) = public.version(version_id) {
+        return Ok(v.clone());
+    }
+
+    let code = paths::AppPaths::global()
+        .ok()
+        .and_then(|p| settings::load_settings(&p).ok())
+        .map(|s| s.private_code)
+        .unwrap_or_default();
+
+    if !code.trim().is_empty() {
+        if let Some(m) = private_access::fetch_private_manifest(MANIFEST_SOURCE, &code).await? {
+            if let Some(v) = m.version(version_id) {
+                return Ok(v.clone());
+            }
+        }
+    }
+    anyhow::bail!("Версия '{version_id}' не найдена")
+}
+
 #[tauri::command]
 async fn get_server_status(host: String, port: u16) -> server_status::ServerStatus {
     server_status::ping(&host, port).await
@@ -139,10 +182,7 @@ async fn reinstall_version(version_id: String) -> Result<(), String> {
     ];
     const LAUNCHER_OWNED_FILES: [&str; 2] = ["packwiz.json", "launcher_profiles.json"];
 
-    let manifest = manifest::load_manifest(MANIFEST_SOURCE).await.map_err(|e| format!("{e:#}"))?;
-    let ver = manifest
-        .version(&version_id)
-        .ok_or_else(|| format!("Версия '{version_id}' не найдена"))?;
+    let ver = resolve_version(&version_id).await.map_err(|e| format!("{e:#}"))?;
     let paths = paths::AppPaths::for_version(&ver.id, ver.java.major).map_err(|e| format!("{e:#}"))?;
 
     if !paths.game_dir.is_dir() {
@@ -172,10 +212,7 @@ async fn reinstall_version(version_id: String) -> Result<(), String> {
 #[tauri::command]
 async fn open_game_folder(app: tauri::AppHandle, version_id: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let manifest = manifest::load_manifest(MANIFEST_SOURCE).await.map_err(|e| format!("{e:#}"))?;
-    let ver = manifest
-        .version(&version_id)
-        .ok_or_else(|| format!("Версия '{version_id}' не найдена"))?;
+    let ver = resolve_version(&version_id).await.map_err(|e| format!("{e:#}"))?;
     let paths = paths::AppPaths::for_version(&ver.id, ver.java.major).map_err(|e| format!("{e:#}"))?;
     paths.ensure_dirs().map_err(|e| format!("{e:#}"))?;
     app.opener()
@@ -250,10 +287,7 @@ async fn launch(app: tauri::AppHandle, version_id: String, nick: String) -> Resu
 
 async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: String) -> anyhow::Result<()> {
     let manifest = manifest::load_manifest(MANIFEST_SOURCE).await?;
-    let ver = manifest
-        .version(&version_id)
-        .with_context(|| format!("Версия '{version_id}' не найдена в манифесте"))?
-        .clone();
+    let ver = resolve_version(&version_id).await?;
     if ver.status != "ready" {
         anyhow::bail!("Версия «{}» ещё недоступна для запуска", ver.title);
     }
@@ -392,6 +426,7 @@ pub fn run() {
             get_server_status,
             get_system_info,
             get_playtime,
+            unlock_private,
             reinstall_version,
             open_game_folder,
             open_logs_folder,

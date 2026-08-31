@@ -44,6 +44,10 @@
       <div class="home-hint">Выберите сборку</div>
       <div class="version-grid" id="version-grid"></div>
 
+      <!-- Вход в закрытые сборки. Намеренно неприметный: обычному игроку
+           не за что зацепиться, а кто знает код — найдёт по подсказке. -->
+      <button id="btn-code" class="code-link" title="Ввести код доступа">Есть код?</button>
+
       <!-- Лента новостей из манифеста. Если она пуста, блок скрыт целиком. -->
       <div class="news-panel hidden" id="news-panel">
         <div class="news-panel-title">Новости</div>
@@ -223,6 +227,31 @@
     <div class="mods-summary" id="mods-summary"></div>
 
     <div class="mod-grid" id="optional-list"></div>
+  </div>
+
+  <!-- Ввод кода доступа к закрытой сборке. -->
+  <div id="code-modal" class="mod-details hidden">
+    <div class="mod-details-card code-card">
+      <div class="mod-details-head">
+        <div class="mod-details-titles">
+          <div class="mod-details-name">Код доступа</div>
+          <div class="mod-details-sub">Закрытая сборка — по коду от администрации</div>
+        </div>
+        <button id="code-close" class="icon-btn" title="Закрыть">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M18 6 6 18M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="code-body">
+        <input id="code-input" class="code-input" type="password" placeholder="введите код"
+               autocomplete="off" spellcheck="false" maxlength="64" />
+        <div id="code-status" class="code-status"></div>
+      </div>
+      <div class="mod-details-foot">
+        <button id="code-submit" class="play-btn code-submit">Войти</button>
+      </div>
+    </div>
   </div>
 
   <!-- Подробности о моде: открывается кликом по карточке. Отдельным слоем,

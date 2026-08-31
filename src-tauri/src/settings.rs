@@ -17,6 +17,11 @@ pub struct Settings {
     /// паках — это разные моды, их выбор не должен пересекаться.
     #[serde(default)]
     pub optional_mods: HashMap<String, HashMap<String, bool>>,
+    /// Код доступа к закрытым сборкам. Пусто — игрок его не вводил.
+    /// Хранится, чтобы не спрашивать при каждом запуске; лежит в той же
+    /// папке, что и остальные настройки, и наружу никуда не уходит.
+    #[serde(default)]
+    pub private_code: String,
 }
 
 impl Settings {
@@ -39,6 +44,7 @@ impl Default for Settings {
             nickname: String::new(),
             ram_mb: default_ram_mb(),
             optional_mods: HashMap::new(),
+            private_code: String::new(),
         }
     }
 }

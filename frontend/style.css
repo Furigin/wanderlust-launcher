@@ -1803,3 +1803,70 @@ button.news-item:hover {
   accent-color: #7c5cff;
   cursor: pointer;
 }
+
+/* ---------- Вход в закрытые сборки ---------- */
+
+/* Надпись намеренно тихая: она не должна привлекать внимание игрока,
+   которому закрытая сборка не полагается. */
+.code-link {
+  display: block;
+  margin: 18px auto 0;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  opacity: 0.35;
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.code-link:hover {
+  opacity: 0.8;
+}
+
+.code-card {
+  width: min(400px, 100%);
+}
+
+.code-body {
+  padding: 18px;
+}
+
+.code-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  letter-spacing: 2px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.code-input:focus {
+  border-color: rgba(124, 92, 255, 0.6);
+}
+
+.code-status {
+  margin-top: 10px;
+  min-height: 16px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.code-status-error {
+  color: #ff9b9b;
+}
+
+.code-submit {
+  width: 100%;
+  font-size: 15px;
+  padding: 12px;
+}
