@@ -1056,19 +1056,42 @@ function setModEnabled(mod, on) {
   const byId = (id) => all.find((x) => x.id === id);
 
   if (on) {
-    for (const depId of mod.requires || []) {
-      if (byId(depId)) sel[depId] = true;
+    // Включили — подтягиваем всё, что мод требует, и зависимости зависимостей.
+    const queue = [...(mod.requires || [])];
+    while (queue.length) {
+      const dep = byId(queue.shift());
+      if (!dep || sel[dep.id] === true) continue;
+      sel[dep.id] = true;
+      queue.push(...(dep.requires || []));
     }
   } else {
-    for (const depId of mod.requires || []) {
-      const dep = byId(depId);
-      if (!dep) continue;
+    // Выключили — вместе с модом уходят те, кому он нужен. Раньше это было
+    // не нужно: зависимости всегда были скрытыми библиотеками и снять их
+    // руками было нельзя. Sodium показывается отдельно, и без него Iris
+    // просто не загрузится.
+    const parents = [...(mod.needed_by || [])];
+    while (parents.length) {
+      const parent = byId(parents.shift());
+      if (!parent || !isModEnabled(parent, versionId)) continue;
+      sel[parent.id] = false;
+      parents.push(...(parent.needed_by || []));
+    }
+
+    // ...и скрытые библиотеки, которые больше никому из включённых не нужны.
+    // Видимые моды не трогаем: их игрок выбирал сам, и снятие Iris не повод
+    // отбирать у него Sodium.
+    const deps = [...(mod.requires || [])];
+    while (deps.length) {
+      const dep = byId(deps.shift());
+      if (!dep || !dep.hidden || !isModEnabled(dep, versionId)) continue;
       const stillNeeded = (dep.needed_by || []).some((otherId) => {
-        if (otherId === mod.id) return false;
         const other = byId(otherId);
         return other && isModEnabled(other, versionId);
       });
-      if (!stillNeeded) sel[depId] = false;
+      if (!stillNeeded) {
+        sel[dep.id] = false;
+        deps.push(...(dep.requires || []));
+      }
     }
   }
 
