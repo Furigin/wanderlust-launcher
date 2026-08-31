@@ -226,7 +226,11 @@
     <!-- Сводка: сколько выбрано и сколько это займёт места. -->
     <div class="mods-summary" id="mods-summary"></div>
 
-    <div class="mod-grid" id="optional-list"></div>
+    <!-- Прокручивается обёртка, а не сам грид: грид с заданной высотой
+         ужимает свои строки и карточки схлопываются. -->
+    <div class="mods-scroll">
+      <div class="mod-grid" id="optional-list"></div>
+    </div>
   </div>
 
   <!-- Ввод кода доступа к закрытой сборке. -->
