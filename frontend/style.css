@@ -1194,7 +1194,11 @@ button.news-item:hover {
   padding-top: var(--titlebar-h);
   display: flex;
   align-items: center;
-  justify-content: center;
+  /* justify-content: center здесь нельзя: когда сборок и новостей больше,
+     чем влезает в окно, центрирование срезает содержимое сверху и до него
+     уже не долистать. Центрируем через margin: auto на .home-inner — он
+     «сдаётся» первым, как только места перестаёт хватать. */
+  overflow-y: auto;
 }
 
 .home-inner {
@@ -1202,7 +1206,8 @@ button.news-item:hover {
   flex-direction: column;
   align-items: center;
   width: 100%;
-  padding: 0 24px;
+  padding: 24px;
+  margin: auto 0; /* по центру, пока влезает; прижато к верху, когда нет */
 }
 
 .home-brand {
@@ -1797,10 +1802,10 @@ button.news-item:hover {
   user-select: none;
 }
 
-.mod-details-toggle input {
-  width: 18px;
-  height: 18px;
-  accent-color: #7c5cff;
+/* Правило под системную галочку больше не нужно: внутри .switch поле ввода
+   спрятано, а размеры ему задаёт сам переключатель. Прежние 18×18 ломали бы
+   его разметку. */
+.mod-details-toggle .switch {
   cursor: pointer;
 }
 
@@ -1887,7 +1892,7 @@ button.news-item:hover {
 
 #screen-mods .overlay-header,
 #screen-mods .mods-toolbar,
-#screen-mods .mods-summary {
+#screen-mods .mods-summary-row {
   flex-shrink: 0;
 }
 
@@ -1926,4 +1931,363 @@ button.news-item:hover {
 .overlay-screen::-webkit-scrollbar-thumb:hover,
 .mod-details-body::-webkit-scrollbar-thumb:hover {
   background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================================
+   Полировка: движение, состояния, мелкие элементы
+   ============================================================ */
+
+/* ---------- Появление экранов ----------
+   Экраны переключаются через .hidden (display:none). Анимация на
+   :not(.hidden) запускается заново каждый раз, когда элемент возвращается
+   в поток, — отдельный JS для этого не нужен. */
+
+@keyframes screen-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.994); }
+  to   { opacity: 1; transform: none; }
+}
+
+.home-screen:not(.hidden),
+.app-content:not(.hidden) {
+  animation: screen-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Оверлеи приезжают сбоку: так видно, что это слой поверх, а не замена
+   экрана, и «назад» читается как движение обратно. */
+@keyframes overlay-in {
+  from { opacity: 0; transform: translateX(26px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.overlay-screen:not(.hidden) {
+  animation: overlay-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Модальные окна: подложка проявляется, карточка подрастает. */
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modal-card-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+.mod-details:not(.hidden) {
+  animation: backdrop-in 0.18s ease both;
+  backdrop-filter: blur(3px);
+}
+
+.mod-details:not(.hidden) .mod-details-card {
+  animation: modal-card-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---------- Карточки сборок ---------- */
+
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.version-card {
+  animation: card-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* «Вы играли» — чтобы своя сборка находилась взглядом, а не перебором. */
+.vc-badge-last {
+  background: rgba(53, 214, 143, 0.16);
+  border-color: rgba(53, 214, 143, 0.45);
+  color: #6ee7b0;
+}
+
+/* ---------- Кнопка ИГРАТЬ ----------
+   Блик пробегает по кнопке при наведении: главная кнопка окна должна
+   отзываться на курсор, иначе она выглядит нарисованной. */
+
+.play-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.play-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: skewX(-18deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.play-btn:hover:not(:disabled)::after {
+  animation: play-sheen 0.75s ease-out;
+}
+
+@keyframes play-sheen {
+  from { left: -60%; opacity: 1; }
+  to   { left: 115%; opacity: 0; }
+}
+
+/* Нажатие должно чувствоваться. */
+.play-btn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.995);
+}
+
+/* ---------- Полоса прогресса ---------- */
+
+/* Ширина едет плавно: скачки на 15 % выглядят как подвисание. */
+.progress-bar-fill {
+  transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------- Скелет списка модов ---------- */
+
+.mod-card-skeleton {
+  cursor: default;
+  pointer-events: none;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sk {
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.11) 37%,
+    rgba(255, 255, 255, 0.05) 63%
+  );
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+
+.sk-icon {
+  grid-row: 1 / 3;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+}
+
+.sk-line {
+  height: 10px;
+  margin-bottom: 8px;
+}
+
+.sk-line-title {
+  height: 13px;
+  width: 55%;
+}
+
+.sk-line-short {
+  width: 70%;
+  margin-bottom: 0;
+}
+
+@keyframes sk-shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
+}
+
+/* ---------- Всплывающие уведомления ---------- */
+
+.toasts {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  max-width: 320px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: 10px;
+  background: rgba(20, 21, 28, 0.96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-0);
+  animation: toast-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.toast-err {
+  border-left-color: var(--danger);
+}
+
+.toast-out {
+  animation: toast-out 0.36s ease forwards;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(24px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes toast-out {
+  to { opacity: 0; transform: translateX(24px); }
+}
+
+/* ---------- Строка-переключатель в настройках ---------- */
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.settings-toggle + .settings-toggle {
+  border-top: 1px solid var(--border);
+}
+
+.settings-toggle-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-toggle .settings-hint {
+  margin: 0;
+}
+
+/* ---------- Панель модов: сортировка и сброс ---------- */
+
+.mods-sort {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.mods-sort:hover {
+  border-color: var(--accent);
+  color: var(--text-0);
+}
+
+.mods-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px 4px;
+}
+
+.mods-summary-row .mods-summary {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.mods-clear {
+  flex-shrink: 0;
+  padding: 5px 11px;
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  border-radius: 8px;
+  background: transparent;
+  color: #ff9b9b;
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.mods-clear:hover {
+  background: rgba(255, 107, 107, 0.12);
+  border-color: rgba(255, 107, 107, 0.6);
+}
+
+/* ---------- Клавиатура ----------
+   До этого фокус не было видно вообще: пройти по окну табом можно было
+   только вслепую. :focus-visible не трогает клики мышью. */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.version-card:focus-visible,
+.play-btn:focus-visible {
+  outline-offset: 3px;
+}
+
+/* ---------- Когда движение мешает ----------
+   Системная настройка «уменьшить анимацию» и наш собственный выключатель
+   эффектов гасят всё, что двигается само по себе. Переходы состояний
+   оставляем короткими: без них интерфейс кажется сломанным. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.08s !important;
+  }
+}
+
+body.fx-off .app-bg::before,
+body.fx-off .progress-bar-fill,
+body.fx-off .sk {
+  animation: none;
+}
+
+body.fx-off .version-card,
+body.fx-off .home-screen:not(.hidden),
+body.fx-off .app-content:not(.hidden),
+body.fx-off .overlay-screen:not(.hidden),
+body.fx-off .mod-card {
+  animation: none;
+}
+
+body.fx-off .play-btn:hover:not(:disabled)::after {
+  animation: none;
+}
+
+/* Подпись под полосой: скорость и остаток. Держим высоту всегда, чтобы
+   кнопки под ней не подпрыгивали, когда счётчик появляется. */
+.progress-meta {
+  min-height: 16px;
+  margin-top: 7px;
+  text-align: center;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  letter-spacing: 0.2px;
+}
+
+/* Подпись внутри полосы растянута на всю ширину и центрирована, а проценты
+   стоят справа поверх неё — без отступа длинный текст наезжал бы на них. */
+.progress-label {
+  padding: 0 58px 0 18px;
+}
+
+.progress-label,
+.progress-percent {
+  white-space: nowrap;
+}
+
+/* Кнопка во всю ширину блока настроек. */
+.settings-wide-btn {
+  width: 100%;
+  margin-top: 12px;
 }

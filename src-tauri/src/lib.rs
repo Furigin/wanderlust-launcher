@@ -114,6 +114,13 @@ fn get_playtime(version_id: String) -> serde_json::Value {
     })
 }
 
+/// Версия лаунчера — показываем в настройках, чтобы игрок мог назвать её
+/// при обращении за помощью, не выискивая в свойствах файла.
+#[tauri::command]
+fn launcher_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 /// Проверяет код доступа и отдаёт сборки закрытого манифеста.
 /// Пустой список — код не подошёл. Ошибка — проблемы с сетью.
 #[tauri::command]
@@ -462,6 +469,7 @@ pub fn run() {
             get_server_status,
             get_system_info,
             get_playtime,
+            launcher_version,
             unlock_private,
             reinstall_version,
             open_game_folder,

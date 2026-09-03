@@ -35,6 +35,7 @@ const state = {
   // Состояние экрана модов: строка поиска и фильтр («все» / «включённые»).
   modsQuery: "",
   modsFilter: "all",
+  modsSort: "name",
   // Выбранная версия (объект из manifest.versions) или null на экране выбора.
   selected: null,
 };
@@ -103,7 +104,30 @@ const el = {
   codeInput: document.getElementById("code-input"),
   codeStatus: document.getElementById("code-status"),
   codeSubmit: document.getElementById("code-submit"),
+  toasts: document.getElementById("toasts"),
+  progressMeta: document.getElementById("progress-meta"),
+  optSound: document.getElementById("opt-sound"),
+  optEffects: document.getElementById("opt-effects"),
+  totalPlaytime: document.getElementById("total-playtime"),
+  launcherVersion: document.getElementById("launcher-version"),
+  modsSort: document.getElementById("mods-sort"),
+  modsClear: document.getElementById("btn-mods-clear"),
 };
+
+// ---------- Всплывающие уведомления ----------
+
+/// Короткое сообщение в углу. Раньше каждая кнопка подменяла свою подпись —
+/// «Скопировано» было видно, только если смотреть ровно на неё.
+function toast(text, kind = "ok") {
+  if (!el.toasts) return;
+  const t = document.createElement("div");
+  t.className = `toast toast-${kind}`;
+  t.textContent = text;
+  el.toasts.appendChild(t);
+  // Уходит сам; класс снимаем заранее, чтобы отработало затухание.
+  setTimeout(() => t.classList.add("toast-out"), 2400);
+  setTimeout(() => t.remove(), 2800);
+}
 
 // ---------- Звук и эффекты кликов ----------
 
@@ -165,6 +189,10 @@ document.addEventListener(
     const target = e.target.closest("button, .version-card, .optional-item, .footer-link");
     if (!target || target.disabled) return;
     playClick();
+    // Кнопки окна — не место для праздника: искры из крестика выглядят
+    // издевательством над тем, кто хочет закрыть лаунчер.
+    if (target.closest(".titlebar")) return;
+    if (state.settings && state.settings.effects_enabled === false) return;
     burstSparkles(e.clientX, e.clientY);
   },
   true
@@ -345,6 +373,7 @@ el.btnCopyIp.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(addr.display);
     el.copyIpLabel.textContent = "Скопировано";
+    toast(`Адрес скопирован: ${addr.display}`);
     setTimeout(() => (el.copyIpLabel.textContent = "Адрес сервера"), 1600);
   } catch (e) {
     flog("error", `clipboard: ${e}`);
@@ -513,6 +542,11 @@ function validateNick() {
 
 el.nickInput.addEventListener("input", validateNick);
 
+// Ввёл ник — нажал Enter. Тянуться мышкой к кнопке ради этого не нужно.
+el.nickInput.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !el.playBtn.disabled) el.playBtn.click();
+});
+
 function updatePlayAvailability() {
   el.playBtn.disabled = !NICK_RE.test(el.nickInput.value);
 }
@@ -598,8 +632,14 @@ function renderVersionGrid(versions) {
     card.dataset.id = v.id;
     if (!ready) card.disabled = true;
 
+    // Карточки появляются волной, а не все разом.
+    card.style.animationDelay = `${el.versionGrid.children.length * 70}ms`;
+
+    const last = state.settings && state.settings.last_version === v.id;
     const badge = ready
-      ? '<span class="vc-badge vc-badge-client">Клиент</span>'
+      ? `<span class="vc-badge vc-badge-client">Клиент</span>${
+          last ? '<span class="vc-badge vc-badge-last">Вы играли</span>' : ""
+        }`
       : '<span class="vc-badge vc-badge-soon">Скоро</span>';
 
     card.innerHTML = `
@@ -721,19 +761,64 @@ function showError(message) {
 }
 
 document.getElementById("btn-error-back").addEventListener("click", showIdle);
-document.getElementById("btn-open-logs").addEventListener("click", () => {
-  invoke("open_logs_folder").catch((e) => flog("error", `open_logs_folder: ${e}`));
-});
+for (const id of ["btn-open-logs", "btn-logs-settings"]) {
+  const b = document.getElementById(id);
+  if (b) b.addEventListener("click", () => {
+    invoke("open_logs_folder").catch((e) => flog("error", `open_logs_folder: ${e}`));
+  });
+}
 document.getElementById("btn-copy-log").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(lastErrorText);
+    toast("Текст ошибки скопирован");
   } catch (e) {
     flog("error", `clipboard: ${e}`);
+    toast("Не удалось скопировать", "err");
   }
 });
 
+// Скорость и остаток времени считаем на фронте по тем же событиям
+// прогресса: бэкенд их и так шлёт с накопленным объёмом, отдельный канал
+// ради этого не нужен.
+const speed = { stage: null, startedAt: 0, startedAt0: 0, lastText: "" };
+
+/// «12,4 МБ/с · осталось ~1 мин». Пустая строка, пока считать не по чему.
+function speedSuffix(stage, current, total, unit) {
+  if (unit !== "bytes" || total <= 1) return "";
+
+  // Каждая стадия считается заново: скорость распаковки и скорость
+  // скачивания — разные величины, усреднять их вместе бессмысленно.
+  if (speed.stage !== stage || current < speed.startedAt0) {
+    speed.stage = stage;
+    speed.startedAt = performance.now();
+    speed.startedAt0 = current;
+    return "";
+  }
+
+  const seconds = (performance.now() - speed.startedAt) / 1000;
+  const done = current - speed.startedAt0;
+  // Первые мгновения дают дикие выбросы — ждём, пока наберётся статистика.
+  if (seconds < 1.5 || done <= 0) return speed.lastText;
+
+  const bps = done / seconds;
+  const left = Math.max(0, total - current);
+  const etaSec = bps > 0 ? left / bps : 0;
+  speed.lastText = `${formatBytes(bps)}/с · осталось ${formatEta(etaSec)}`;
+  return speed.lastText;
+}
+
+/// Округляем нарочно грубо: точность «осталось 3 мин 47 с» здесь ложная,
+/// а дёрганый счётчик секунд только нервирует.
+function formatEta(sec) {
+  if (sec < 10) return "меньше 10 с";
+  if (sec < 60) return `${Math.round(sec / 5) * 5} с`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `~${min} мин`;
+  return `~${Math.round(min / 60)} ч`;
+}
+
 listen("progress", (event) => {
-  const { label, current, total, unit } = event.payload;
+  const { stage, label, current, total, unit } = event.payload;
 
   // total = 0 или 1 — объём работы неизвестен (распаковка, установка
   // NeoForge). Показываем бегущую заливку вместо застывшего нуля.
@@ -749,10 +834,14 @@ listen("progress", (event) => {
         ? `${formatBytes(current)} / ${formatBytes(total)}`
         : `${current} / ${total}`;
     el.progressLabel.textContent = `${label} · ${detail}`;
+    el.progressMeta.textContent = speedSuffix(stage || label, current, total, unit);
   } else {
     el.progressFill.style.width = "100%";
     el.progressPercent.textContent = "";
     el.progressLabel.textContent = label;
+    el.progressMeta.textContent = "";
+    speed.stage = null;
+    speed.lastText = "";
   }
 });
 
@@ -803,6 +892,7 @@ listen("game-exited", (event) => {
   appWindow.show();
   appWindow.unminimize();
   appWindow.setFocus();
+  if (state.selected) startServerPolling();
   if (code !== 0) {
     showError(
       `Игра завершилась с ошибкой (код ${code}). Нажмите «Открыть логи» — ` +
@@ -823,6 +913,15 @@ el.playBtn.addEventListener("click", async () => {
 
   try {
     await invoke("launch", { versionId: state.selected.id, nick: el.nickInput.value });
+    // Запомнили, во что играли последний раз — на главном экране эта
+    // карточка будет помечена.
+    if (state.settings.last_version !== state.selected.id) {
+      state.settings.last_version = state.selected.id;
+      invoke("save_settings", { settings: state.settings }).catch(() => {});
+    }
+    // Пока идёт игра, окно спрятано — опрашивать сервер каждые 30 секунд
+    // некому и незачем.
+    stopServerPolling();
     // Пайплайн установки завершился и игра реально запущена (spawn прошёл).
     // Прячем окно целиком (hide, а не minimize): свёрнутый лаунчер занимал
     // место в панели задач и мешал. Процесс при этом жив и ждёт выхода из
@@ -852,6 +951,27 @@ el.modsSearch.addEventListener("input", () => {
   renderOptionalMods(state.optionalMods);
 });
 
+el.modsSort.addEventListener("change", () => {
+  state.modsSort = el.modsSort.value;
+  renderOptionalMods(state.optionalMods);
+});
+
+// Снять всё сразу. Тридцать переключателей по одному — это не выбор,
+// а работа; кнопка появляется, только когда снимать есть что.
+el.modsClear.addEventListener("click", () => {
+  const versionId = state.selected && state.selected.id;
+  if (!versionId) return;
+  const chosen = (state.optionalMods || []).filter((m) => isModEnabled(m, versionId));
+  if (chosen.length === 0) return;
+  for (const m of chosen) {
+    if (!state.settings.optional_mods[versionId]) state.settings.optional_mods[versionId] = {};
+    state.settings.optional_mods[versionId][m.id] = false;
+  }
+  invoke("save_settings", { settings: state.settings }).catch((e) => flog("error", `save_settings: ${e}`));
+  renderOptionalMods(state.optionalMods);
+  toast(`Снято ${chosen.filter((m) => !m.hidden).length}`);
+});
+
 for (const btn of document.querySelectorAll(".mods-filter")) {
   btn.addEventListener("click", () => {
     state.modsFilter = btn.dataset.filter;
@@ -870,13 +990,73 @@ document.getElementById("mod-details-close").addEventListener("click", closeModD
 el.modDetails.addEventListener("click", (ev) => {
   if (ev.target === el.modDetails) closeModDetails();
 });
+// Escape закрывает то, что открыто последним. Раньше он работал только в
+// окне описания мода: из настроек и списка модов выйти с клавиатуры было
+// нельзя, и это читалось как «окно зависло».
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && !el.modDetails.classList.contains("hidden")) closeModDetails();
+  if (ev.key !== "Escape") return;
+  const layers = [
+    [el.modDetails, closeModDetails],
+    [el.codeModal, closeCodeModal],
+    [el.screenMods, () => el.screenMods.classList.add("hidden")],
+    [el.screenOptional, () => el.screenOptional.classList.add("hidden")],
+  ];
+  for (const [node, close] of layers) {
+    if (node && !node.classList.contains("hidden")) {
+      close();
+      return;
+    }
+  }
 });
 
 function openOptionalScreen() {
   if (!state.selected) return;
   el.screenOptional.classList.remove("hidden");
+  refreshTotals();
+}
+
+/// Переключатели звука и эффектов. Значение сохраняем сразу: настройка,
+/// которая не пережила перезапуск, воспринимается как сломанная.
+function initPreferences() {
+  const bind = (input, key, label) => {
+    if (!input) return;
+    input.checked = state.settings[key] !== false;
+    input.addEventListener("change", () => {
+      state.settings[key] = input.checked;
+      invoke("save_settings", { settings: state.settings }).catch((e) =>
+        flog("error", `save_settings: ${e}`)
+      );
+      toast(`${label}: ${input.checked ? "включено" : "выключено"}`);
+    });
+  };
+  bind(el.optSound, "sound_enabled", "Звук");
+  bind(el.optEffects, "effects_enabled", "Эффекты");
+
+  // Класс на body гасит всё, что движется само по себе; CSS решает, что
+  // именно останавливать (см. body.fx-off в стилях).
+  const applyFx = () => document.body.classList.toggle("fx-off", state.settings.effects_enabled === false);
+  applyFx();
+  if (el.optEffects) el.optEffects.addEventListener("change", applyFx);
+}
+
+/// Итоги для экрана настроек: сколько наиграно всего и какая версия
+/// лаунчера установлена.
+async function refreshTotals() {
+  if (el.totalPlaytime && state.selected) {
+    try {
+      const pt = await invoke("get_playtime", { versionId: state.selected.id });
+      el.totalPlaytime.textContent = pt && pt.total_seconds
+        ? formatPlaytime(pt.total_seconds)
+        : "ещё ни разу";
+    } catch (_) {
+      el.totalPlaytime.textContent = "—";
+    }
+  }
+  if (el.launcherVersion && el.launcherVersion.textContent === "—") {
+    try {
+      el.launcherVersion.textContent = await invoke("launcher_version");
+    } catch (_) {}
+  }
 }
 
 /// Экран модов. Список грузится один раз на сборку и дальше живёт в state,
@@ -886,7 +1066,18 @@ async function openModsScreen() {
 
   el.screenMods.classList.remove("hidden");
   if (state.optionalMods.length === 0) {
-    el.optionalList.innerHTML = '<div class="mods-empty">Загружаем список модов…</div>';
+    // Скелет вместо строчки текста: место под карточки видно сразу, и
+    // список не «прыгает», когда данные приходят.
+    el.optionalList.innerHTML = Array.from({ length: 6 })
+      .map(
+        (_, i) =>
+          `<div class="mod-card mod-card-skeleton" style="animation-delay:${i * 60}ms">
+             <div class="sk sk-icon"></div>
+             <div class="mod-card-body"><div class="sk sk-line sk-line-title"></div>
+               <div class="sk sk-line"></div><div class="sk sk-line sk-line-short"></div></div>
+           </div>`
+      )
+      .join("");
     try {
       const mods = await invoke("get_optional_mods", { packwizUrl: state.selected.pack.packwiz_url });
       state.optionalMods = mods;
@@ -936,6 +1127,7 @@ function updateModsSummary() {
       ? `Выбрано ${chosen.length} из ${visible} · ${(bytes / 1024 / 1024).toFixed(1)} МБ`
       : `Ничего не выбрано · доступно ${visible}`;
   }
+  if (el.modsClear) el.modsClear.classList.toggle("hidden", chosen.length === 0);
 }
 
 function renderOptionalMods(mods) {
@@ -956,6 +1148,12 @@ function renderOptionalMods(mods) {
   if (state.modsFilter === "on") {
     visible = visible.filter((m) => isModEnabled(m, versionIdForFilter));
   }
+
+  const bySize = (a, b) => (a.size_bytes || 0) - (b.size_bytes || 0);
+  const byName = (a, b) => (a.name || "").localeCompare(b.name || "", "ru");
+  if (state.modsSort === "size") visible.sort(bySize);
+  else if (state.modsSort === "size-desc") visible.sort((a, b) => bySize(b, a));
+  else visible.sort(byName);
 
   updateModsSummary();
 
@@ -1018,9 +1216,10 @@ function renderOptionalMods(mods) {
     });
     box.addEventListener("change", () => {
       setModEnabled(mod, box.checked);
-      syncCardState(card, box.checked);
+      syncAllCards();
       updateModsSummary();
       // В режиме «Включённые» выключенный мод должен сразу исчезнуть из списка.
+      // Каскад мог погасить и соседей, поэтому перерисовываем список целиком.
       if (state.modsFilter === "on" && !box.checked) renderOptionalMods(state.optionalMods);
     });
 
@@ -1036,6 +1235,24 @@ function isModEnabled(mod, versionId) {
 
 function syncCardState(card, on) {
   card.classList.toggle("mod-card-on", on);
+}
+
+/// Приводит все карточки к тому, что реально записано в настройках.
+///
+/// Нужно из-за каскада: снятие Sodium выключает и Iris, но его карточка об
+/// этом не знала и продолжала показывать «включено». Следующий клик по ней
+/// уходил в обратную сторону — игрок жал «включить», а мод выключался.
+function syncAllCards() {
+  const versionId = state.selected && state.selected.id;
+  if (!versionId) return;
+  for (const card of el.optionalList.querySelectorAll(".mod-card[data-id]")) {
+    const mod = (state.optionalMods || []).find((m) => m.id === card.dataset.id);
+    if (!mod) continue;
+    const box = card.querySelector("input");
+    const on = isModEnabled(mod, versionId);
+    if (box) box.checked = on;
+    syncCardState(card, on);
+  }
 }
 
 /// Сохраняет выбор и тянет за собой зависимости.
@@ -1129,13 +1346,9 @@ function openModDetails(mod) {
   box.onchange = () => {
     setModEnabled(mod, box.checked);
     el.modDetailsSwitchLabel.textContent = box.checked ? "Включён" : "Включить";
-    // Карточка в списке под окном должна показать то же состояние.
-    const card = el.optionalList.querySelector(`[data-id="${CSS.escape(mod.id)}"]`);
-    if (card) {
-      const cardBox = card.querySelector("input");
-      if (cardBox) cardBox.checked = box.checked;
-      syncCardState(card, box.checked);
-    }
+    // Список под окном должен показать то же состояние — и у этого мода,
+    // и у всех, кого задел каскад зависимостей.
+    syncAllCards();
     updateModsSummary();
   };
 
@@ -1236,6 +1449,7 @@ async function init() {
   }
 
   initRamControl();
+  initPreferences();
   initClickSound();
   initReinstall();
 

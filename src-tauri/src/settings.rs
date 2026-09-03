@@ -22,6 +22,21 @@ pub struct Settings {
     /// папке, что и остальные настройки, и наружу никуда не уходит.
     #[serde(default)]
     pub private_code: String,
+    /// Звук нажатий. Включён по умолчанию: выключать имеет смысл тому,
+    /// кто сидит в наушниках с музыкой, а не всем подряд.
+    #[serde(default = "on")]
+    pub sound_enabled: bool,
+    /// Блёстки от кликов и прочая анимация сверх необходимой.
+    #[serde(default = "on")]
+    pub effects_enabled: bool,
+    /// Последняя запущенная сборка — её карточка помечается на главном
+    /// экране, чтобы не искать свою среди чужих.
+    #[serde(default)]
+    pub last_version: String,
+}
+
+fn on() -> bool {
+    true
 }
 
 impl Settings {
@@ -45,6 +60,9 @@ impl Default for Settings {
             ram_mb: default_ram_mb(),
             optional_mods: HashMap::new(),
             private_code: String::new(),
+            sound_enabled: true,
+            effects_enabled: true,
+            last_version: String::new(),
         }
     }
 }
@@ -64,4 +82,28 @@ pub fn save_settings(paths: &AppPaths, settings: &Settings) -> Result<()> {
     let text = serde_json::to_string_pretty(settings).context("Не удалось сериализовать настройки")?;
     std::fs::write(&paths.launcher_json, text)
         .with_context(|| format!("Не удалось сохранить {}", paths.launcher_json.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_settings_file_keeps_effects_on() {
+        // У игроков на диске лежит launcher.json, записанный прошлой версией:
+        // новых полей там нет. serde по умолчанию дал бы false, и звук с
+        // анимацией молча выключились бы у всех разом.
+        let s: Settings = serde_json::from_str(r#"{"nickname":"furigin","ram_mb":6144}"#).unwrap();
+        assert!(s.sound_enabled);
+        assert!(s.effects_enabled);
+        assert_eq!(s.ram_mb, 6144);
+        assert_eq!(s.last_version, "");
+    }
+
+    #[test]
+    fn broken_file_falls_back_to_defaults() {
+        let s: Settings = serde_json::from_str("{ это не json").unwrap_or_default();
+        assert!(s.sound_enabled);
+        assert_eq!(s.ram_mb, default_ram_mb());
+    }
 }
