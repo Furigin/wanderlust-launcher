@@ -343,10 +343,6 @@ body.bg-wanderlust-create {
   box-shadow: 0 14px 34px -8px rgba(124, 92, 255, 0.7);
 }
 
-.play-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
 .play-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -386,7 +382,8 @@ body.bg-wanderlust-create {
     linear-gradient(135deg, var(--accent), var(--accent-dim));
   background-size: 34px 100%, 100% 100%;
   animation: stripes 0.9s linear infinite;
-  transition: width 0.3s ease;
+  /* Плавно: скачки заливки на 15 % читаются как подвисание. */
+  transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Полоски ползут вправо — видно, что процесс идёт, даже когда счётчик
@@ -1287,8 +1284,20 @@ button.news-item:hover {
   pointer-events: none;
 }
 
+/* Сборки без своей обложки не должны выглядеть как «картинку забыли».
+   Поверх градиента — редкая косая штриховка и пара мягких пятен света:
+   на глаз это читается как фактура, а не как заливка одним цветом.
+   У карточек с настоящей обложкой background переопределяется целиком,
+   так что их это не касается. */
 .theme-orange .version-card-media {
-  background: radial-gradient(125% 125% at 22% 8%, #ff9147 0%, #e0501a 44%, #6f1d0a 100%);
+  background:
+    repeating-linear-gradient(
+      58deg,
+      rgba(255, 255, 255, 0.05) 0 2px,
+      transparent 2px 16px
+    ),
+    radial-gradient(60% 45% at 78% 82%, rgba(255, 214, 170, 0.22), transparent 70%),
+    radial-gradient(125% 125% at 22% 8%, #ff9147 0%, #e0501a 44%, #6f1d0a 100%);
 }
 
 /* Обложки конкретных сборок. Ключ — id версии из манифеста, поэтому
@@ -1307,11 +1316,25 @@ button.news-item:hover {
 }
 
 .theme-purple .version-card-media {
-  background: radial-gradient(125% 125% at 22% 8%, #8a6bff 0%, #4a2fb0 46%, #191038 100%);
+  background:
+    repeating-linear-gradient(
+      58deg,
+      rgba(255, 255, 255, 0.05) 0 2px,
+      transparent 2px 16px
+    ),
+    radial-gradient(55% 40% at 80% 85%, rgba(196, 178, 255, 0.24), transparent 70%),
+    radial-gradient(125% 125% at 22% 8%, #8a6bff 0%, #4a2fb0 46%, #191038 100%);
 }
 
 .theme-default .version-card-media {
-  background: radial-gradient(125% 125% at 22% 8%, #3f74ab 0%, #24405f 50%, #0f1e2c 100%);
+  background:
+    repeating-linear-gradient(
+      58deg,
+      rgba(255, 255, 255, 0.05) 0 2px,
+      transparent 2px 16px
+    ),
+    radial-gradient(55% 40% at 80% 85%, rgba(170, 208, 255, 0.2), transparent 70%),
+    radial-gradient(125% 125% at 22% 8%, #3f74ab 0%, #24405f 50%, #0f1e2c 100%);
 }
 
 .version-card-badges {
@@ -2045,11 +2068,6 @@ button.news-item:hover {
 
 /* ---------- Полоса прогресса ---------- */
 
-/* Ширина едет плавно: скачки на 15 % выглядят как подвисание. */
-.progress-bar-fill {
-  transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
 /* ---------- Скелет списка модов ---------- */
 
 .mod-card-skeleton {
@@ -2501,25 +2519,30 @@ body.fx-off .pstep-now::before {
   --my: 50%;
 }
 
-.version-card::after {
+/* Именно ::before: ::after у карточки уже занят затемнением снизу, без
+   которого белый заголовок на светлой обложке перестаёт читаться.
+   ::before рисуется раньше — подсветка ложится под затемнение и не
+   выбеливает текст. */
+.version-card::before {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   border-radius: inherit;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.25s ease;
   background: radial-gradient(
     260px circle at var(--mx) var(--my),
-    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.12),
     transparent 65%
   );
 }
 
-.version-card:hover::after {
+.version-card:hover::before {
   opacity: 1;
 }
 
-body.fx-off .version-card::after {
+body.fx-off .version-card::before {
   display: none;
 }
