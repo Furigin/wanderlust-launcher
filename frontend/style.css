@@ -282,7 +282,11 @@ body.bg-wanderlust-create {
 
 .action-area {
   position: relative;
-  height: 64px;
+  /* min-height, а не height: раньше здесь стояло ровно 64 px, а блоки
+     прогресса и ошибки лежали внутри абсолютом. Текст ошибки в такую
+     высоту не помещался и обрезался до нуля — игрок видел красную рамку
+     с четырьмя кнопками и ни словом о том, что случилось. */
+  min-height: 64px;
 }
 
 .action-row {
@@ -349,10 +353,12 @@ body.bg-wanderlust-create {
   box-shadow: none;
 }
 
+/* Накладывать их друг на друга незачем: одновременно виден ровно один,
+   остальные скрыты через display: none. Обычный поток даёт каждому
+   столько высоты, сколько ему нужно. */
 .progress-area,
 .error-area {
-  position: absolute;
-  inset: 0;
+  position: static;
 }
 
 .hidden {
@@ -543,15 +549,15 @@ body.bg-wanderlust-create {
 }
 
 .error-text {
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.45;
   color: var(--text-0);
-  max-height: 34px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .error-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
 }
 
@@ -2290,4 +2296,230 @@ body.fx-off .play-btn:hover:not(:disabled)::after {
 .settings-wide-btn {
   width: 100%;
   margin-top: 12px;
+}
+
+/* ---------- Состояния «пусто / не получилось» ----------
+   Раньше в этих местах выводилась сырая строка ошибки, и игрок не понимал
+   ни что случилось, ни что делать. Теперь у каждого такого состояния есть
+   знак, объяснение и действие. */
+
+.state-box {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 34px 24px;
+  text-align: center;
+  color: var(--text-1);
+  animation: screen-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.state-icon {
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 20px;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.state-title {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--text-0);
+}
+
+.state-text {
+  max-width: 420px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.state-action {
+  margin-top: 10px;
+}
+
+/* ---------- Подсказка под полем ника ---------- */
+
+.nick-hint {
+  transition: color 0.15s ease;
+}
+
+.nick-hint-bad {
+  color: #ff9b9b;
+}
+
+/* ---------- Экран ошибки: технические подробности ---------- */
+
+.error-detail {
+  max-height: 150px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-2);
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ---------- Кнопки в настройках в один ряд ---------- */
+
+.settings-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.settings-btn-row .secondary-btn {
+  flex: 1;
+}
+
+/* ---------- Живой сервер ----------
+   Точка пульсирует, только когда сервер онлайн: неподвижный кружок легко
+   принять за нарисованную картинку, а не за живой статус. */
+
+@keyframes server-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(53, 214, 143, 0.5); }
+  70%  { box-shadow: 0 0 0 7px rgba(53, 214, 143, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(53, 214, 143, 0); }
+}
+
+.server-dot.online {
+  animation: server-pulse 2.4s ease-out infinite;
+}
+
+body.fx-off .server-dot.online,
+body.fx-off .state-box {
+  animation: none;
+}
+
+/* ---------- Этапы установки ----------
+   Пять точек над полосой. Первая установка идёт минутами, и без них
+   единственный ответ на «что оно делает» — бегущая подпись, которую
+   нужно успеть прочитать. */
+
+.progress-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+
+.pstep {
+  position: relative;
+  flex: 1;
+  padding-top: 12px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  transition: color 0.25s ease;
+}
+
+/* Точка над подписью. */
+.pstep::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Линия к следующему этапу — рисуется у всех, кроме последнего. */
+.pstep:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: calc(50% + 8px);
+  right: calc(-50% + 8px);
+  height: 1px;
+  background: var(--border);
+  transition: background-color 0.25s ease;
+}
+
+.pstep-done {
+  color: var(--text-1);
+}
+
+.pstep-done::before {
+  background: var(--ok);
+}
+
+.pstep-done::after {
+  background: rgba(53, 214, 143, 0.45);
+}
+
+.pstep-now {
+  color: var(--text-0);
+}
+
+.pstep-now::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.22);
+  animation: pstep-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pstep-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18); }
+  50%      { box-shadow: 0 0 0 6px rgba(124, 92, 255, 0.1); }
+}
+
+body.fx-off .pstep-now::before {
+  animation: none;
+}
+
+/* ---------- Карточка сборки: подсветка за курсором ----------
+   Пятно света едет за мышью. Держим его слабым: карточка должна отзываться
+   на курсор, а не мигать. */
+
+.version-card {
+  --mx: 50%;
+  --my: 50%;
+}
+
+.version-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  background: radial-gradient(
+    260px circle at var(--mx) var(--my),
+    rgba(255, 255, 255, 0.1),
+    transparent 65%
+  );
+}
+
+.version-card:hover::after {
+  opacity: 1;
+}
+
+body.fx-off .version-card::after {
+  display: none;
 }

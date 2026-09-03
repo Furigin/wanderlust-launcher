@@ -86,7 +86,7 @@
           autocomplete="off"
           spellcheck="false"
         />
-        <div class="nick-hint">3–16 символов</div>
+        <div class="nick-hint" id="nick-hint">3–16 символов</div>
       </div>
 
       <!-- Показывается вместо поля ника, пока идёт установка: первая
@@ -121,6 +121,17 @@
         </div>
 
         <div id="progress-area" class="progress-area hidden">
+          <!-- Этапы установки. Бэкенд и так помечает каждое событие стадией
+               (java / install / assets / sync / launch) — показываем её,
+               чтобы за десять минут первой установки было видно не только
+               «сколько», но и «что вообще происходит». -->
+          <div class="progress-steps" id="progress-steps">
+            <span class="pstep" data-stage="java">Java</span>
+            <span class="pstep" data-stage="install">Игра</span>
+            <span class="pstep" data-stage="assets">Ресурсы</span>
+            <span class="pstep" data-stage="sync">Моды</span>
+            <span class="pstep" data-stage="launch">Запуск</span>
+          </div>
           <div class="progress-bar" id="progress-bar">
             <div class="progress-bar-fill" id="progress-fill"></div>
             <div class="progress-shine"></div>
@@ -134,9 +145,13 @@
 
         <div id="error-area" class="error-area hidden">
           <div class="error-text" id="error-text"></div>
+          <!-- Технический текст спрятан под кнопку: игроку он не нужен, а
+               администратору без него не разобраться. -->
+          <div class="error-detail hidden" id="error-detail"></div>
           <div class="error-actions">
-            <button id="btn-copy-log" class="secondary-btn">Скопировать текст</button>
-            <button id="btn-open-logs" class="secondary-btn">Открыть логи</button>
+            <button id="btn-error-detail" class="secondary-btn">Подробности</button>
+            <button id="btn-copy-log" class="secondary-btn" title="Скопировать полный текст ошибки">Скопировать</button>
+            <button id="btn-open-logs" class="secondary-btn" title="Открыть папку с логами">Логи</button>
             <button id="btn-error-back" class="secondary-btn">Назад</button>
           </div>
         </div>
@@ -218,13 +233,20 @@
         <span class="settings-value" id="total-playtime">—</span>
       </div>
       <div class="settings-row">
+        <span class="settings-label">Сборка занимает на диске</span>
+        <span class="settings-value" id="install-size">—</span>
+      </div>
+      <div class="settings-row">
         <span class="settings-label">Версия лаунчера</span>
         <span class="settings-value" id="launcher-version">—</span>
       </div>
       <div class="settings-hint">Обновляется само при запуске. Назовите эту версию, если будете просить помощи.</div>
       <!-- Логи раньше открывались только с экрана ошибки. Но спросить «что у
            тебя в логах» могут и когда игра просто ведёт себя странно. -->
-      <button id="btn-logs-settings" class="secondary-btn settings-wide-btn">Открыть папку с логами</button>
+      <div class="settings-btn-row">
+        <button id="btn-check-update" class="secondary-btn">Проверить обновление</button>
+        <button id="btn-logs-settings" class="secondary-btn">Папка с логами</button>
+      </div>
     </div>
 
     <div class="settings-danger">

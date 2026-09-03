@@ -114,6 +114,32 @@ fn get_playtime(version_id: String) -> serde_json::Value {
     })
 }
 
+/// Сколько места занимает установленная сборка. `null`, если её ещё нет.
+///
+/// Считаем обходом папки: точного числа больше взять неоткуда, а игроку
+/// полезно понимать, за что уходят гигабайты, прежде чем сносить сборку.
+#[tauri::command]
+async fn get_install_size(version_id: String) -> Option<u64> {
+    let ver = resolve_version(&version_id).await.ok()?;
+    let paths = paths::AppPaths::for_version(&ver.id, ver.java.major).ok()?;
+    if !paths.game_dir.is_dir() {
+        return None;
+    }
+    tokio::task::spawn_blocking(move || dir_size(&paths.game_dir)).await.ok()
+}
+
+fn dir_size(dir: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    entries
+        .flatten()
+        .map(|e| match e.file_type() {
+            Ok(t) if t.is_dir() => dir_size(&e.path()),
+            Ok(t) if t.is_file() => e.metadata().map(|m| m.len()).unwrap_or(0),
+            _ => 0, // символические ссылки не считаем: рискуем зациклиться
+        })
+        .sum()
+}
+
 /// Версия лаунчера — показываем в настройках, чтобы игрок мог назвать её
 /// при обращении за помощью, не выискивая в свойствах файла.
 #[tauri::command]
@@ -146,6 +172,19 @@ async fn unlock_private(code: String) -> Result<Vec<manifest::VersionInfo>, Stri
 /// в публичном манифесте, и `manifest.version(id)` возвращал бы None.
 async fn resolve_version(version_id: &str) -> anyhow::Result<manifest::VersionInfo> {
     let public = manifest::load_manifest(MANIFEST_SOURCE).await?;
+    resolve_version_in(&public, version_id).await
+}
+
+/// То же самое, но по уже загруженному манифесту.
+///
+/// Отдельная функция появилась ради запуска игры: он и сам читает манифест
+/// (нужен блоклист античита), и звал resolve_version, который тянул его
+/// второй раз. Лишний сетевой запрос на каждом «Играть» — и лишний повод
+/// упасть, если связь моргнула ровно между этими двумя запросами.
+async fn resolve_version_in(
+    public: &manifest::Manifest,
+    version_id: &str,
+) -> anyhow::Result<manifest::VersionInfo> {
     if let Some(v) = public.version(version_id) {
         return Ok(v.clone());
     }
@@ -330,7 +369,7 @@ async fn launch(app: tauri::AppHandle, version_id: String, nick: String) -> Resu
 
 async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: String) -> anyhow::Result<()> {
     let manifest = manifest::load_manifest(MANIFEST_SOURCE).await?;
-    let ver = resolve_version(&version_id).await?;
+    let ver = resolve_version_in(&manifest, &version_id).await?;
     if ver.status != "ready" {
         anyhow::bail!("Версия «{}» ещё недоступна для запуска", ver.title);
     }
@@ -470,6 +509,7 @@ pub fn run() {
             get_system_info,
             get_playtime,
             launcher_version,
+            get_install_size,
             unlock_private,
             reinstall_version,
             open_game_folder,

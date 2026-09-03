@@ -38,6 +38,9 @@ const state = {
   modsSort: "name",
   // Выбранная версия (объект из manifest.versions) или null на экране выбора.
   selected: null,
+  // Был ли сервер недоступен на прошлой проверке — чтобы заметить, что он
+  // поднялся, и сказать об этом ровно один раз.
+  serverWasOffline: false,
 };
 
 const el = {
@@ -55,6 +58,8 @@ const el = {
   progressLabel: document.getElementById("progress-label"),
   errorArea: document.getElementById("error-area"),
   errorText: document.getElementById("error-text"),
+  errorDetail: document.getElementById("error-detail"),
+  btnErrorDetail: document.getElementById("btn-error-detail"),
   newsText: document.getElementById("news-text"),
   footerLinks: document.getElementById("footer-links"),
   screenUpdate: document.getElementById("screen-update"),
@@ -111,6 +116,9 @@ const el = {
   totalPlaytime: document.getElementById("total-playtime"),
   launcherVersion: document.getElementById("launcher-version"),
   modsSort: document.getElementById("mods-sort"),
+  nickHint: document.getElementById("nick-hint"),
+  installSize: document.getElementById("install-size"),
+  btnCheckUpdate: document.getElementById("btn-check-update"),
   modsClear: document.getElementById("btn-mods-clear"),
 };
 
@@ -293,11 +301,18 @@ async function refreshServerStatus() {
 
   try {
     const s = await invoke("get_server_status", { host: addr.host, port: addr.port });
+    // Сервер перезапускали, и он вернулся, пока лаунчер открыт — об этом
+    // стоит сказать: иначе игрок сидит и жмёт «Играть» наугад.
+    if (state.serverWasOffline && s.online) toast("Сервер снова онлайн");
+    state.serverWasOffline = !s.online;
     el.serverDot.classList.toggle("online", s.online);
     el.serverDot.classList.toggle("offline", !s.online);
     if (s.online) {
       const word = pluralPlayers(s.players_online);
-      el.serverText.textContent = `Сервер онлайн · ${s.players_online} ${word}`;
+      // Потолок сервера показываем, если он известен: «7 игроков» и
+      // «7 из 40» читаются по-разному, когда решаешь, заходить ли сейчас.
+      const count = s.players_max ? `${s.players_online} из ${s.players_max}` : `${s.players_online} ${word}`;
+      el.serverText.textContent = `Сервер онлайн · ${count}`;
       el.serverPing.textContent = `${s.ping_ms} мс`;
     } else {
       el.serverText.textContent = "Сервер недоступен";
@@ -306,6 +321,7 @@ async function refreshServerStatus() {
     buildPlayersTip(s);
   } catch (e) {
     flog("warn", `get_server_status: ${e}`);
+    state.serverWasOffline = true;
     el.serverDot.classList.add("offline");
     el.serverText.textContent = "Сервер недоступен";
     el.serverPing.textContent = "";
@@ -527,20 +543,71 @@ async function refreshPlaytime(versionId) {
 // ---------- Титульная строка ----------
 
 document.getElementById("btn-minimize").addEventListener("click", () => appWindow.minimize());
-document.getElementById("btn-close").addEventListener("click", () => appWindow.close());
+
+// Закрытие во время установки требует подтверждения. Оборванная на середине
+// установка оставляет сборку в половинчатом состоянии, и следующий запуск
+// начинается с докачки — а игрок к тому моменту уже уверен, что «лаунчер
+// сломался». Один лишний клик дешевле такого разговора.
+let closeArmed = false;
+let closeTimer = null;
+document.getElementById("btn-close").addEventListener("click", () => {
+  const installing = !el.progressArea.classList.contains("hidden");
+  if (!installing || closeArmed) {
+    appWindow.close();
+    return;
+  }
+  closeArmed = true;
+  toast("Идёт установка. Нажмите крестик ещё раз, чтобы всё-таки закрыть", "err");
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => (closeArmed = false), 4000);
+});
 el.btnHome.addEventListener("click", goHome);
 
 // ---------- Ник ----------
 
 function validateNick() {
-  const valid = NICK_RE.test(el.nickInput.value);
+  const value = el.nickInput.value;
+  const valid = NICK_RE.test(value);
   el.nickInput.classList.toggle("valid", valid);
-  el.nickInput.classList.toggle("invalid-shown", el.nickInput.value.length > 0 && !valid);
+  el.nickInput.classList.toggle("invalid-shown", value.length > 0 && !valid);
+  el.nickHint.textContent = nickHintFor(value, valid);
+  el.nickHint.classList.toggle("nick-hint-bad", value.length > 0 && !valid);
   updatePlayAvailability();
   return valid;
 }
 
+/// Раньше под полем всегда висело «3–16 символов», и игрок с ником «Вася»
+/// видел красную рамку без единого намёка, что не так именно с ним.
+function nickHintFor(value, valid) {
+  if (value.length === 0) return "3–16 символов";
+  if (valid) return "Всё в порядке";
+  if (value.length < 3) return "Слишком короткий — нужно хотя бы 3 символа";
+
+  const bad = [...new Set(value.split("").filter((c) => !/[A-Za-z0-9_]/.test(c)))];
+  if (bad.length) {
+    const cyrillic = bad.some((c) => /[А-Яа-яЁё]/.test(c));
+    return cyrillic
+      ? "Только латиница — Minecraft не пускает с русскими буквами"
+      : `Нельзя использовать: ${bad.join(" ")}`;
+  }
+  return "3–16 символов";
+}
+
 el.nickInput.addEventListener("input", validateNick);
+
+// Ник сохраняем сразу, как только он стал корректным. Раньше он записывался
+// только при удачном запуске: игрок мог ввести ник, полистать моды, закрыть
+// лаунчер — и в следующий раз вводить заново.
+let nickSaveTimer = null;
+el.nickInput.addEventListener("input", () => {
+  if (!NICK_RE.test(el.nickInput.value) || !state.settings) return;
+  clearTimeout(nickSaveTimer);
+  nickSaveTimer = setTimeout(() => {
+    if (state.settings.nickname === el.nickInput.value) return;
+    state.settings.nickname = el.nickInput.value;
+    invoke("save_settings", { settings: state.settings }).catch(() => {});
+  }, 600);
+});
 
 // Ввёл ник — нажал Enter. Тянуться мышкой к кнопке ради этого не нужно.
 el.nickInput.addEventListener("keydown", (ev) => {
@@ -607,6 +674,64 @@ function renderFooterLinks(links) {
   }
 }
 
+// ---------- Человеческий текст ошибок ----------
+
+// Технический текст полезен нам в логе, но игроку он не говорит ничего.
+// «error sending request for url ... dns error» и «os error 10060» — это
+// для него одно и то же: «не работает». Переводим на понятное и, главное,
+// подсказываем, что делать.
+const ERROR_HINTS = [
+  [/dns error|tcp connect|connection refused|ConnectFailure|отверг запрос|Connect\)/i,
+   "Нет связи с сервером. Проверьте интернет и попробуйте ещё раз."],
+  [/timed out|os error 10060|не получен нужный отклик|timeout/i,
+   "Сервер долго не отвечает. Обычно помогает повторить попытку или включить VPN."],
+  [/принудительно разорвал|10054|Обрыв соединения/i,
+   "Соединение оборвалось на середине. Нажмите ещё раз — докачается только недостающее."],
+  [/Контрольная сумма|hash|повреждён при скачивании/i,
+   "Файл скачался повреждённым. Повторите запуск — лаунчер перекачает его заново."],
+  [/нет места|os error 112|ENOSPC/i,
+   "На диске закончилось место. Освободите пару гигабайт и попробуйте снова."],
+  [/Invalid mod file hash/i,
+   "Список модов на сервере только что обновился. Нажмите «Играть» ещё раз."],
+  [/403|Forbidden/i,
+   "Сервер отказал в доступе. Если пользуетесь VPN — попробуйте выключить его."],
+  [/404|Not Found/i,
+   "Файл не найден на сервере. Скорее всего, идёт обновление сборки — попробуйте через пару минут."],
+  [/OutOfMemory|Java heap/i,
+   "Игре не хватило памяти. Увеличьте её в настройках лаунчера."],
+];
+
+/// Короткое понятное объяснение. Полный текст остаётся доступен кнопкой
+/// «Скопировать» — он нужен, когда игрок приходит за помощью.
+function humanError(err) {
+  const raw = String(err && err.message ? err.message : err);
+  for (const [re, text] of ERROR_HINTS) {
+    if (re.test(raw)) return text;
+  }
+  // Не нашли знакомого — показываем как есть, но без служебного «Error:».
+  return raw.replace(/^Error:\s*/i, "");
+}
+
+/// Блок «пусто/не получилось» с кнопкой повтора. Возвращает элемент, чтобы
+/// вызывающий сам решил, куда его положить.
+function stateBox({ icon, title, text, actionLabel, onAction }) {
+  const box = document.createElement("div");
+  box.className = "state-box";
+  box.innerHTML = `
+    <div class="state-icon">${icon}</div>
+    <div class="state-title">${escapeHtml(title)}</div>
+    ${text ? `<div class="state-text">${escapeHtml(text)}</div>` : ""}
+  `;
+  if (actionLabel && onAction) {
+    const b = document.createElement("button");
+    b.className = "secondary-btn state-action";
+    b.textContent = actionLabel;
+    b.addEventListener("click", onAction);
+    box.appendChild(b);
+  }
+  return box;
+}
+
 function escapeHtml(s) {
   const div = document.createElement("div");
   div.textContent = s;
@@ -654,12 +779,28 @@ function renderVersionGrid(versions) {
 
     if (ready) {
       card.addEventListener("click", () => selectVersion(v));
+      // Подсветка едет за курсором. Считаем координаты относительно самой
+      // карточки, чтобы пятно не «прилипало» к краю при быстрых движениях.
+      card.addEventListener("pointermove", (ev) => {
+        if (state.settings && state.settings.effects_enabled === false) return;
+        const r = card.getBoundingClientRect();
+        card.style.setProperty("--mx", `${ev.clientX - r.left}px`);
+        card.style.setProperty("--my", `${ev.clientY - r.top}px`);
+      });
     }
     el.versionGrid.appendChild(card);
   }
 
   if (versions.length === 0) {
-    el.versionGrid.innerHTML = '<div class="optional-empty">В манифесте нет ни одной версии.</div>';
+    el.versionGrid.appendChild(
+      stateBox({
+        icon: "◎",
+        title: "Пока нет ни одной сборки",
+        text: "Похоже, идёт обновление. Загляните чуть позже.",
+        actionLabel: "Обновить",
+        onAction: loadManifest,
+      })
+    );
   }
 }
 
@@ -670,6 +811,7 @@ function selectVersion(v) {
   state.optionalMods = [];
   state.modsQuery = "";
   state.modsFilter = "all";
+  state.serverWasOffline = false;
   if (el.modsSearch) el.modsSearch.value = "";
   if (el.modsBadge) el.modsBadge.classList.add("hidden");
   preloadOptionalMods(v);
@@ -689,6 +831,12 @@ function selectVersion(v) {
   showIdle();
   validateNick();
   startServerPolling();
+
+  // Новому игроку сразу ставим курсор в поле ника: это единственное, что от
+  // него требуется, и промахнуться мимо мышкой уже нельзя.
+  if (!NICK_RE.test(el.nickInput.value)) {
+    setTimeout(() => el.nickInput.focus(), 120);
+  }
 }
 
 /// Ставит на body класс с фоном выбранной сборки, снимая предыдущий.
@@ -749,18 +897,32 @@ function showProgress() {
 let lastErrorText = "";
 
 function showError(message) {
-  lastErrorText = message;
+  lastErrorText = String(message);
   el.actionRow.classList.add("hidden");
   el.progressArea.classList.add("hidden");
   el.errorArea.classList.remove("hidden");
   el.progressTip.classList.add("hidden");
   el.nickField.classList.remove("hidden");
   stopTips();
-  el.errorText.textContent = message;
+
+  // Игроку — понятное объяснение, что делать. Технические подробности
+  // рядом, но свёрнуты: раньше на него вываливался стек с «dns error», и
+  // единственной реакцией было «у меня всё сломалось».
+  const human = humanError(message);
+  el.errorText.textContent = human;
+  el.errorDetail.textContent = lastErrorText;
+  el.errorDetail.classList.add("hidden");
+  const sameText = human === lastErrorText;
+  el.btnErrorDetail.classList.toggle("hidden", sameText);
+  el.btnErrorDetail.textContent = "Подробности";
   setBackAvailable(true);
 }
 
 document.getElementById("btn-error-back").addEventListener("click", showIdle);
+document.getElementById("btn-error-detail").addEventListener("click", () => {
+  const hidden = el.errorDetail.classList.toggle("hidden");
+  el.btnErrorDetail.textContent = hidden ? "Подробности" : "Свернуть";
+});
 for (const id of ["btn-open-logs", "btn-logs-settings"]) {
   const b = document.getElementById(id);
   if (b) b.addEventListener("click", () => {
@@ -817,8 +979,23 @@ function formatEta(sec) {
   return `~${Math.round(min / 60)} ч`;
 }
 
+/// Порядок этапов установки — в нём же они идут в пайплайне запуска.
+const STAGES = ["java", "install", "assets", "sync", "launch"];
+
+/// Подсвечивает текущий этап и помечает пройденные.
+function markStage(stage) {
+  const idx = STAGES.indexOf(stage);
+  if (idx < 0) return;
+  for (const node of document.querySelectorAll(".pstep")) {
+    const at = STAGES.indexOf(node.dataset.stage);
+    node.classList.toggle("pstep-done", at < idx);
+    node.classList.toggle("pstep-now", at === idx);
+  }
+}
+
 listen("progress", (event) => {
   const { stage, label, current, total, unit } = event.payload;
+  markStage(stage);
 
   // total = 0 или 1 — объём работы неизвестен (распаковка, установка
   // NeoForge). Показываем бегущую заливку вместо застывшего нуля.
@@ -910,6 +1087,12 @@ el.playBtn.addEventListener("click", async () => {
   showProgress();
   el.progressFill.style.width = "0%";
   el.progressLabel.textContent = "Подготовка...";
+  el.progressMeta.textContent = "";
+  // Начинаем с чистого списка этапов: предыдущая попытка могла оборваться
+  // на середине и оставить половину отмеченной.
+  for (const node of document.querySelectorAll(".pstep")) {
+    node.classList.remove("pstep-done", "pstep-now");
+  }
 
   try {
     await invoke("launch", { versionId: state.selected.id, nick: el.nickInput.value });
@@ -990,6 +1173,19 @@ document.getElementById("mod-details-close").addEventListener("click", closeModD
 el.modDetails.addEventListener("click", (ev) => {
   if (ev.target === el.modDetails) closeModDetails();
 });
+// Ctrl+M — моды, Ctrl+, — настройки: те же сочетания, что в большинстве
+// приложений, и не надо тянуться мышью через весь экран.
+document.addEventListener("keydown", (ev) => {
+  if (!ev.ctrlKey || ev.altKey || !state.selected) return;
+  if (ev.key === "m" || ev.key === "ь") {
+    ev.preventDefault();
+    openModsScreen();
+  } else if (ev.key === "," || ev.key === "б") {
+    ev.preventDefault();
+    openOptionalScreen();
+  }
+});
+
 // Escape закрывает то, что открыто последним. Раньше он работал только в
 // окне описания мода: из настроек и списка модов выйти с клавиатуры было
 // нельзя, и это читалось как «окно зависло».
@@ -1057,6 +1253,39 @@ async function refreshTotals() {
       el.launcherVersion.textContent = await invoke("launcher_version");
     } catch (_) {}
   }
+  if (el.installSize && state.selected) {
+    el.installSize.textContent = "считаем…";
+    try {
+      const bytes = await invoke("get_install_size", { versionId: state.selected.id });
+      el.installSize.textContent = bytes ? formatBytes(bytes) : "ещё не установлена";
+    } catch (_) {
+      el.installSize.textContent = "—";
+    }
+  }
+}
+
+/// Ручная проверка обновления. Лаунчер проверяет и сам при запуске, но
+/// когда что-то не работает, первое, что хочется сделать, — убедиться,
+/// что версия свежая, и не гадать.
+function initUpdateCheck() {
+  if (!el.btnCheckUpdate) return;
+  el.btnCheckUpdate.addEventListener("click", async () => {
+    el.btnCheckUpdate.disabled = true;
+    const label = el.btnCheckUpdate.textContent;
+    el.btnCheckUpdate.textContent = "Проверяем…";
+    try {
+      const found = await invoke("check_for_update");
+      // Если обновление есть, лаунчер уже показывает свой экран загрузки
+      // и вот-вот перезапустится — говорить что-то ещё незачем.
+      if (!found) toast("У вас последняя версия");
+    } catch (e) {
+      flog("warn", `check_for_update: ${e}`);
+      toast(humanError(e), "err");
+    } finally {
+      el.btnCheckUpdate.disabled = false;
+      el.btnCheckUpdate.textContent = label;
+    }
+  });
 }
 
 /// Экран модов. Список грузится один раз на сборку и дальше живёт в state,
@@ -1083,8 +1312,19 @@ async function openModsScreen() {
       state.optionalMods = mods;
     } catch (e) {
       flog("error", `get_optional_mods: ${e}`);
-      el.optionalList.innerHTML =
-        `<div class="mods-empty">Не удалось загрузить список.<br><span class="mods-empty-sub">${escapeHtml(String(e))}</span></div>`;
+      el.optionalList.innerHTML = "";
+      el.optionalList.appendChild(
+        stateBox({
+          icon: "⚠",
+          title: "Не удалось загрузить список модов",
+          text: humanError(e),
+          actionLabel: "Повторить",
+          onAction: () => {
+            state.optionalMods = [];
+            openModsScreen();
+          },
+        })
+      );
       return;
     }
   }
@@ -1123,9 +1363,14 @@ function updateModsSummary() {
   }
   if (el.modsSummary) {
     const visible = all.filter((m) => !m.hidden).length;
-    el.modsSummary.textContent = chosen.length
+    const base = chosen.length
       ? `Выбрано ${chosen.length} из ${visible} · ${(bytes / 1024 / 1024).toFixed(1)} МБ`
       : `Ничего не выбрано · доступно ${visible}`;
+    // При активном поиске важнее знать, сколько нашлось прямо сейчас.
+    const q = (state.modsQuery || "").trim();
+    el.modsSummary.textContent = q
+      ? `${base} · найдено ${countMatches(all, q)}`
+      : base;
   }
   if (el.modsClear) el.modsClear.classList.toggle("hidden", chosen.length === 0);
 }
@@ -1162,8 +1407,26 @@ function renderOptionalMods(mods) {
     return;
   }
   if (visible.length === 0) {
-    el.optionalList.innerHTML =
-      '<div class="mods-empty">Ничего не найдено.<div class="mods-empty-sub">Измените запрос или фильтр.</div></div>';
+    el.optionalList.innerHTML = "";
+    el.optionalList.appendChild(
+      stateBox({
+        icon: "⌕",
+        title: "Ничего не найдено",
+        text: state.modsFilter === "on" && !q
+          ? "Ни один дополнительный мод пока не включён."
+          : "Попробуйте другой запрос или снимите фильтр.",
+        actionLabel: q || state.modsFilter !== "all" ? "Сбросить поиск" : null,
+        onAction: () => {
+          state.modsQuery = "";
+          state.modsFilter = "all";
+          el.modsSearch.value = "";
+          for (const b of document.querySelectorAll(".mods-filter")) {
+            b.classList.toggle("mods-filter-on", b.dataset.filter === "all");
+          }
+          renderOptionalMods(state.optionalMods);
+        },
+      })
+    );
     return;
   }
 
@@ -1175,9 +1438,10 @@ function renderOptionalMods(mods) {
     card.className = "mod-card";
     card.dataset.id = mod.id;
 
+    const letter = escapeHtml((mod.name || "?").slice(0, 1));
     const icon = mod.icon_url
       ? `<img class="mod-card-icon" src="${escapeHtml(mod.icon_url)}" alt="" loading="lazy" />`
-      : `<div class="mod-card-icon mod-card-icon-empty">${escapeHtml((mod.name || "?").slice(0, 1))}</div>`;
+      : `<div class="mod-card-icon mod-card-icon-empty">${letter}</div>`;
 
     const size = mod.size_bytes ? `${(mod.size_bytes / 1024 / 1024).toFixed(1)} МБ` : "";
     // Подпись про зависимости — игрок должен понимать, что включится ещё один мод.
@@ -1204,6 +1468,22 @@ function renderOptionalMods(mods) {
       </div>
     `;
 
+    // Иконка тянется с раздачи, и при слабой связи вместо неё оставался бы
+    // значок битой картинки. Подменяем на букву — как у модов без иконки.
+    const img = card.querySelector("img.mod-card-icon");
+    if (img) {
+      img.addEventListener(
+        "error",
+        () => {
+          const ph = document.createElement("div");
+          ph.className = "mod-card-icon mod-card-icon-empty";
+          ph.textContent = (mod.name || "?").slice(0, 1);
+          img.replaceWith(ph);
+        },
+        { once: true }
+      );
+    }
+
     const box = card.querySelector("input");
     box.checked = isModEnabled(mod, versionId);
     syncCardState(card, box.checked);
@@ -1225,6 +1505,14 @@ function renderOptionalMods(mods) {
 
     el.optionalList.appendChild(card);
   }
+}
+
+/// Сколько модов подходит под запрос — по тем же полям, что и сам поиск.
+function countMatches(all, query) {
+  const q = query.toLowerCase();
+  return all.filter(
+    (m) => !m.hidden && `${m.name} ${m.description} ${m.description_full}`.toLowerCase().includes(q)
+  ).length;
 }
 
 /// Включён ли мод: сохранённый выбор игрока, иначе значение по умолчанию.
@@ -1332,6 +1620,8 @@ function openModDetails(mod) {
   if (mod.icon_url) {
     el.modDetailsIcon.src = mod.icon_url;
     el.modDetailsIcon.classList.remove("hidden");
+    // Не догрузилась — лучше без иконки, чем со значком битой картинки.
+    el.modDetailsIcon.onerror = () => el.modDetailsIcon.classList.add("hidden");
   } else {
     el.modDetailsIcon.classList.add("hidden");
   }
@@ -1426,6 +1716,41 @@ async function submitCode() {
   }
 }
 
+/// Загружает манифест и рисует главный экран. Вынесено отдельно, чтобы
+/// кнопка «Повторить» перезапускала ровно это, а не весь лаунчер: у игрока
+/// интернет мог просто моргнуть, и заставлять его перезапускаться — грубо.
+async function loadManifest() {
+  el.versionGrid.innerHTML = "";
+  el.versionGrid.appendChild(
+    stateBox({ icon: "◍", title: "Загружаем список сборок…", text: "" })
+  );
+
+  try {
+    state.manifest = await invoke("get_manifest");
+  } catch (e) {
+    flog("error", `get_manifest: ${e}`);
+    el.versionGrid.innerHTML = "";
+    el.versionGrid.appendChild(
+      stateBox({
+        icon: "⚠",
+        title: "Не удалось загрузить список сборок",
+        text: humanError(e),
+        actionLabel: "Повторить",
+        onAction: loadManifest,
+      })
+    );
+    return;
+  }
+
+  renderVersionGrid(state.manifest.versions || []);
+  renderNews(state.manifest.news_feed || []);
+
+  // Код уже вводили — открываем закрытые сборки молча, без окна.
+  if (state.settings.private_code) {
+    applyPrivateCode(state.settings.private_code, { silent: true });
+  }
+}
+
 // ---------- Инициализация ----------
 
 async function init() {
@@ -1450,24 +1775,11 @@ async function init() {
 
   initRamControl();
   initPreferences();
+  initUpdateCheck();
   initClickSound();
   initReinstall();
 
-  try {
-    state.manifest = await invoke("get_manifest");
-  } catch (e) {
-    flog("error", `get_manifest: ${e}`);
-    el.versionGrid.innerHTML = `<div class="optional-empty">Не удалось загрузить манифест: ${escapeHtml(String(e))}</div>`;
-    return;
-  }
-
-  renderVersionGrid(state.manifest.versions || []);
-  renderNews(state.manifest.news_feed || []);
-
-  // Код уже вводили — открываем закрытые сборки молча, без окна.
-  if (state.settings.private_code) {
-    applyPrivateCode(state.settings.private_code, { silent: true });
-  }
+  await loadManifest();
 
   flog("info", "frontend initialised");
 
