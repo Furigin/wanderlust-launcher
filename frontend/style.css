@@ -1526,36 +1526,6 @@ button.news-item:hover {
   background: rgba(0, 0, 0, 0.35);
 }
 
-.mods-filters {
-  display: flex;
-  gap: 6px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.mods-filter {
-  padding: 7px 14px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12.5px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.mods-filter:hover {
-  color: var(--text);
-}
-
-.mods-filter-on {
-  background: rgba(124, 92, 255, 0.22);
-  color: #cbbcff;
-}
-
 .mods-summary {
   padding: 12px 20px 4px;
   font-size: 12px;
@@ -2205,25 +2175,6 @@ button.news-item:hover {
 
 /* ---------- Панель модов: сортировка и сброс ---------- */
 
-.mods-sort {
-  flex-shrink: 0;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-1);
-  font-family: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
-}
-
-.mods-sort:hover {
-  border-color: var(--accent);
-  color: var(--text-0);
-}
-
 .mods-summary-row {
   display: flex;
   align-items: center;
@@ -2561,4 +2512,34 @@ body.fx-off .pstep-now::before {
 
 body.fx-off .version-card::before {
   display: none;
+}
+
+/* ---------- Отмена установки ---------- */
+
+.cancel-btn {
+  display: block;
+  margin: 10px auto 0;
+  padding: 6px 18px;
+  font-size: 12px;
+}
+
+.cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- Наигранное время ----------
+   Уехало из центральной колонки в правый нижний угол: это справка, а не то,
+   ради чего открывают лаунчер, и в центре она отбирала внимание у ника. */
+
+.playtime {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  margin: 0;
+  align-self: auto;
+  font-size: 11.5px;
+  color: var(--text-2);
+  letter-spacing: 0.2px;
+  pointer-events: none;
 }

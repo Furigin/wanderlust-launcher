@@ -75,6 +75,9 @@ pub async fn ensure_assets(paths: &AppPaths, version: &MergedVersion, reporter: 
         let done = done.clone();
         let reporter = reporter.clone();
         async move {
+            // Ассетов тысячи. Проверяем перед каждым: уже начатые докачаются,
+            // а новые не запустятся, и отмена отработает за секунду.
+            crate::cancel::check()?;
             let url = format!(
                 "https://resources.download.minecraft.net/{}/{}",
                 &hash[0..2],

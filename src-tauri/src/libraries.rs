@@ -34,6 +34,9 @@ pub async fn ensure_libraries(paths: &AppPaths, version: &MergedVersion, reporte
     reporter.report("install", "Проверка библиотек", 0, total.max(1));
 
     for (i, lib) in missing.iter().enumerate() {
+        // Библиотек несколько сотен; без проверки внутри цикла отмена
+        // сработала бы только после того, как скачается всё.
+        crate::cancel::check()?;
         let artifact = lib.downloads.as_ref().unwrap().artifact.as_ref().unwrap();
         let dest = paths.game_dir.join("libraries").join(&artifact.path);
         download_and_verify(&client, &artifact.url, HashAlgo::Sha1, &artifact.sha1, &dest)

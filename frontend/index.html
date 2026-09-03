@@ -71,11 +71,6 @@
         <div class="server-players-tip" id="server-players-tip"></div>
       </div>
 
-      <!-- Наиграно в этой сборке. Считает сам лаунчер по времени между
-           запуском и выходом из игры — серверная статистика знает только
-           время на сервере и только у тех, кто на него заходил. -->
-      <div class="playtime" id="playtime" hidden></div>
-
       <div class="nick-field" id="nick-field">
         <label class="nick-label" for="nick-input">Введите ник:</label>
         <input
@@ -141,6 +136,9 @@
           <!-- Скорость и остаток — отдельной строкой: в самой полосе длинная
                подпись налезала на проценты. -->
           <div class="progress-meta" id="progress-meta"></div>
+          <!-- Отмена. Первая установка — это гигабайт с лишним; раньше выйти
+               из неё можно было только закрыв окно, то есть убив процесс. -->
+          <button id="btn-cancel" class="secondary-btn cancel-btn">Отменить</button>
         </div>
 
         <div id="error-area" class="error-area hidden">
@@ -177,6 +175,12 @@
     <!-- Ряд иконок: Discord, Telegram, донат и карта. Карта копируется
          по клику — см. renderFooterLinks в app.js. -->
     <div class="footer-links" id="footer-links"></div>
+
+    <!-- Наиграно в этой сборке. Считает сам лаунчер по времени между
+         запуском и выходом из игры — серверная статистика знает только
+         время на сервере и только у тех, кто на него заходил.
+         Стоит в углу: это справка, а не то, ради чего сюда заходят. -->
+    <div class="playtime" id="playtime" hidden></div>
   </main>
 
   <div id="screen-optional" class="overlay-screen hidden">
@@ -281,15 +285,6 @@
         </svg>
         <input id="mods-search-input" type="text" placeholder="Поиск по названию" autocomplete="off" spellcheck="false" />
       </div>
-      <div class="mods-filters">
-        <button class="mods-filter mods-filter-on" data-filter="all">Все</button>
-        <button class="mods-filter" data-filter="on">Включённые</button>
-      </div>
-      <select id="mods-sort" class="mods-sort" title="Порядок в списке">
-        <option value="name">По названию</option>
-        <option value="size">Сначала лёгкие</option>
-        <option value="size-desc">Сначала тяжёлые</option>
-      </select>
     </div>
 
     <!-- Сводка: сколько выбрано и сколько это займёт места. -->

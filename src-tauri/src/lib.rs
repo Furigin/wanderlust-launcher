@@ -12,6 +12,7 @@ pub mod libraries;
 pub mod logger;
 pub mod manifest;
 pub mod neoforge;
+pub mod cancel;
 pub mod packwiz;
 pub mod packwiz_meta;
 pub mod paths;
@@ -138,6 +139,17 @@ fn dir_size(dir: &std::path::Path) -> u64 {
             _ => 0, // символические ссылки не считаем: рискуем зациклиться
         })
         .sum()
+}
+
+/// Просит прервать текущую установку.
+///
+/// Сама отмена происходит в пайплайне: он проверяет флаг между шагами и
+/// внутри циклов скачивания, а запущенный packwiz-installer убивается —
+/// он качает моды минутами и на флаг посмотреть не может.
+#[tauri::command]
+fn cancel_launch() {
+    log::info!("Игрок отменил запуск");
+    cancel::request();
 }
 
 /// Версия лаунчера — показываем в настройках, чтобы игрок мог назвать её
@@ -368,6 +380,10 @@ async fn launch(app: tauri::AppHandle, version_id: String, nick: String) -> Resu
 }
 
 async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: String) -> anyhow::Result<()> {
+    // Каждый запуск начинается с чистого флага: иначе одна отмена запретила
+    // бы все следующие попытки до перезапуска лаунчера.
+    cancel::reset();
+
     let manifest = manifest::load_manifest(MANIFEST_SOURCE).await?;
     let ver = resolve_version_in(&manifest, &version_id).await?;
     if ver.status != "ready" {
@@ -400,14 +416,19 @@ async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: St
     let packwiz_url = ver.pack.packwiz_url.clone();
 
     let java_exe = jre::ensure_jre(&paths, &ver.java.windows_x64, &reporter).await?;
+    cancel::check()?;
     neoforge::ensure_neoforge_installed(&paths, &java_exe, &ver.neoforge.version, &reporter).await?;
+    cancel::check()?;
 
     let neoforge_id = format!("neoforge-{}", ver.neoforge.version);
     let merged_version = version::load_merged_version(&paths.game_dir, &neoforge_id)?;
     libraries::ensure_libraries(&paths, &merged_version, &reporter).await?;
+    cancel::check()?;
     assets::ensure_assets(&paths, &merged_version, &reporter).await?;
+    cancel::check()?;
 
     packwiz::sync_modpack(&paths, &java_exe, &packwiz_url, &reporter).await?;
+    cancel::check()?;
 
     // Сохраняем ник сразу после успешного клика "Играть", и применяем
     // выбор опциональных модов поверх обычного синка — CLI packwiz-installer
@@ -420,6 +441,9 @@ async fn run_launch_pipeline(app: tauri::AppHandle, version_id: String, nick: St
     if packwiz::reconcile_optional_mods(&paths, &settings.optional_for(&ver.id)).await? {
         packwiz::sync_modpack(&paths, &java_exe, &packwiz_url, &reporter).await?;
     }
+
+    // Последняя точка: дальше уже стартует java, и прерывать нечего.
+    cancel::check()?;
 
     // Автоподключение включаем только когда у версии задан адрес сервера.
     let server_address = if ver.server.host.trim().is_empty() {
@@ -509,6 +533,7 @@ pub fn run() {
             get_system_info,
             get_playtime,
             launcher_version,
+            cancel_launch,
             get_install_size,
             unlock_private,
             reinstall_version,

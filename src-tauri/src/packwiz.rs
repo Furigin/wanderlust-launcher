@@ -159,20 +159,43 @@ fn run_installer(
         buf
     });
 
-    let mut tail = Vec::new();
-    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-        if let Some((current, total)) = parse_progress_line(&line) {
-            reporter.report("sync", "Скачивание модов", current, total);
+    // stdout тоже читаем в отдельном потоке, а не здесь: этот поток должен
+    // остаться свободным, чтобы опрашивать флаг отмены. Иначе мы висели бы
+    // на чтении строки, а packwiz на крупном моде молчит по минуте.
+    let reporter_for_lines = reporter.clone();
+    let stdout_handle = std::thread::spawn(move || {
+        let mut tail: Vec<String> = Vec::new();
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if let Some((current, total)) = parse_progress_line(&line) {
+                reporter_for_lines.report("sync", "Скачивание модов", current, total);
+            }
+            // Держим только хвост — на случай ошибки его покажем игроку,
+            // полный лог из сотен строк в сообщение об ошибке не нужен.
+            tail.push(line);
+            if tail.len() > 40 {
+                tail.remove(0);
+            }
         }
-        // Держим только хвост — на случай ошибки его покажем игроку,
-        // полный лог из сотен строк в сообщение об ошибке не нужен.
-        tail.push(line);
-        if tail.len() > 40 {
-            tail.remove(0);
-        }
-    }
+        tail
+    });
 
-    let status = child.wait().context("Не удалось дождаться packwiz-installer")?;
+    // Ждём завершения опросом, а не блокирующим wait(): между проверками
+    // успеваем заметить отмену и убить процесс. 150 мс не заметны ни игроку,
+    // ни по нагрузке.
+    let status = loop {
+        if let Some(st) = child.try_wait().context("Не удалось опросить packwiz-installer")? {
+            break st;
+        }
+        if crate::cancel::requested() {
+            let _ = child.kill();
+            let _ = child.wait();
+            // Потоки чтения закроются сами, когда закроются трубы процесса.
+            bail!("{}", crate::cancel::CANCELLED_MESSAGE);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    };
+
+    let tail = stdout_handle.join().unwrap_or_default();
     let stderr_text = stderr_handle.join().unwrap_or_default();
 
     if !status.success() {

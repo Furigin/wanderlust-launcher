@@ -34,8 +34,6 @@ const state = {
   optionalMods: [],
   // Состояние экрана модов: строка поиска и фильтр («все» / «включённые»).
   modsQuery: "",
-  modsFilter: "all",
-  modsSort: "name",
   // Выбранная версия (объект из manifest.versions) или null на экране выбора.
   selected: null,
   // Был ли сервер недоступен на прошлой проверке — чтобы заметить, что он
@@ -115,7 +113,7 @@ const el = {
   optEffects: document.getElementById("opt-effects"),
   totalPlaytime: document.getElementById("total-playtime"),
   launcherVersion: document.getElementById("launcher-version"),
-  modsSort: document.getElementById("mods-sort"),
+  btnCancel: document.getElementById("btn-cancel"),
   nickHint: document.getElementById("nick-hint"),
   installSize: document.getElementById("install-size"),
   btnCheckUpdate: document.getElementById("btn-check-update"),
@@ -827,7 +825,6 @@ function selectVersion(v) {
   // сбросить, иначе покажутся моды предыдущей.
   state.optionalMods = [];
   state.modsQuery = "";
-  state.modsFilter = "all";
   state.serverWasOffline = false;
   if (el.modsSearch) el.modsSearch.value = "";
   if (el.modsBadge) el.modsBadge.classList.add("hidden");
@@ -899,6 +896,28 @@ function showIdle() {
   setBackAvailable(true);
 }
 
+/// Текст, которым бэкенд помечает отмену (cancel.rs::CANCELLED_MESSAGE).
+/// Отмена — не сбой, и показывать её красной рамкой с кнопкой «Открыть
+/// логи» было бы издевательством.
+const CANCELLED_MESSAGE = "Запуск отменён";
+
+function initCancel() {
+  el.btnCancel.addEventListener("click", async () => {
+    el.btnCancel.disabled = true;
+    el.btnCancel.textContent = "Отменяем…";
+    el.progressLabel.textContent = "Останавливаем установку…";
+    el.progressMeta.textContent = "";
+    try {
+      await invoke("cancel_launch");
+    } catch (e) {
+      flog("warn", `cancel_launch: ${e}`);
+    }
+    // Дальше ждём, пока пайплайн сам оборвётся и вернёт ошибку отмены:
+    // между проверками флага он тратит доли секунды, но убитый
+    // packwiz-installer может закрываться чуть дольше.
+  });
+}
+
 function showProgress() {
   el.actionRow.classList.add("hidden");
   el.progressArea.classList.remove("hidden");
@@ -907,6 +926,8 @@ function showProgress() {
   // подсказки, чтобы ожидание не было пустым.
   el.nickField.classList.add("hidden");
   el.progressTip.classList.remove("hidden");
+  el.btnCancel.disabled = false;
+  el.btnCancel.textContent = "Отменить";
   startTips();
   setBackAvailable(false);
 }
@@ -1128,6 +1149,14 @@ el.playBtn.addEventListener("click", async () => {
     // игры — событие game-exited вернёт окно обратно.
     await appWindow.hide();
   } catch (e) {
+    // Отмена — это то, о чём игрок попросил сам: возвращаем обычный экран
+    // и коротко подтверждаем, а не пугаем красной рамкой.
+    if (String(e).includes(CANCELLED_MESSAGE)) {
+      flog("info", "запуск отменён игроком");
+      showIdle();
+      toast("Установка остановлена");
+      return;
+    }
     flog("error", `launch failed: ${e}`);
     showError(String(e));
   }
@@ -1151,11 +1180,6 @@ el.modsSearch.addEventListener("input", () => {
   renderOptionalMods(state.optionalMods);
 });
 
-el.modsSort.addEventListener("change", () => {
-  state.modsSort = el.modsSort.value;
-  renderOptionalMods(state.optionalMods);
-});
-
 // Снять всё сразу. Тридцать переключателей по одному — это не выбор,
 // а работа; кнопка появляется, только когда снимать есть что.
 el.modsClear.addEventListener("click", () => {
@@ -1172,15 +1196,6 @@ el.modsClear.addEventListener("click", () => {
   toast(`Снято ${chosen.filter((m) => !m.hidden).length}`);
 });
 
-for (const btn of document.querySelectorAll(".mods-filter")) {
-  btn.addEventListener("click", () => {
-    state.modsFilter = btn.dataset.filter;
-    for (const b of document.querySelectorAll(".mods-filter")) {
-      b.classList.toggle("mods-filter-on", b === btn);
-    }
-    renderOptionalMods(state.optionalMods);
-  });
-}
 document.getElementById("btn-back-optional").addEventListener("click", () => {
   el.screenOptional.classList.add("hidden");
 });
@@ -1407,15 +1422,10 @@ function renderOptionalMods(mods) {
       `${m.name} ${m.description} ${m.description_full}`.toLowerCase().includes(q)
     );
   }
-  if (state.modsFilter === "on") {
-    visible = visible.filter((m) => isModEnabled(m, versionIdForFilter));
-  }
-
-  const bySize = (a, b) => (a.size_bytes || 0) - (b.size_bytes || 0);
-  const byName = (a, b) => (a.name || "").localeCompare(b.name || "", "ru");
-  if (state.modsSort === "size") visible.sort(bySize);
-  else if (state.modsSort === "size-desc") visible.sort((a, b) => bySize(b, a));
-  else visible.sort(byName);
+  // Сортировка одна и всегда по названию: модов в списке десятки, а не
+  // сотни, и искать глазами удобнее по алфавиту. Отдельные переключатели
+  // порядка и фильтр «только включённые» убраны как лишние на таком объёме.
+  visible.sort((a, b) => (a.name || "").localeCompare(b.name || "", "ru"));
 
   updateModsSummary();
 
@@ -1429,17 +1439,11 @@ function renderOptionalMods(mods) {
       stateBox({
         icon: "⌕",
         title: "Ничего не найдено",
-        text: state.modsFilter === "on" && !q
-          ? "Ни один дополнительный мод пока не включён."
-          : "Попробуйте другой запрос или снимите фильтр.",
-        actionLabel: q || state.modsFilter !== "all" ? "Сбросить поиск" : null,
+        text: "Попробуйте другой запрос.",
+        actionLabel: q ? "Сбросить поиск" : null,
         onAction: () => {
           state.modsQuery = "";
-          state.modsFilter = "all";
           el.modsSearch.value = "";
-          for (const b of document.querySelectorAll(".mods-filter")) {
-            b.classList.toggle("mods-filter-on", b.dataset.filter === "all");
-          }
           renderOptionalMods(state.optionalMods);
         },
       })
@@ -1515,9 +1519,6 @@ function renderOptionalMods(mods) {
       setModEnabled(mod, box.checked);
       syncAllCards();
       updateModsSummary();
-      // В режиме «Включённые» выключенный мод должен сразу исчезнуть из списка.
-      // Каскад мог погасить и соседей, поэтому перерисовываем список целиком.
-      if (state.modsFilter === "on" && !box.checked) renderOptionalMods(state.optionalMods);
     });
 
     el.optionalList.appendChild(card);
@@ -1801,6 +1802,7 @@ async function init() {
   initRamControl();
   initPreferences();
   initUpdateCheck();
+  initCancel();
   initClickSound();
   initReinstall();
 
